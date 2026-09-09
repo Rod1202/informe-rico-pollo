@@ -1,0 +1,16 @@
+node_modules
+dist
+_to_delete
+vite.config.js.timestamp-*
+
+# Variables de entorno: los PIN no se versionan (.env.example sí, como plantilla)
+.env
+.env.*
+!.env.example
+
+# Datos crudos del cliente: registros de impresión con nombres de usuario y
+# títulos de documentos. No hacen falta para desplegar (el dashboard consume
+# src/data/dataset.json, que sí se versiona). Quitar estas líneas solo si el
+# repositorio es privado y se acepta guardar ahí información del personal.
+utils/ndd/
+utils/sds/

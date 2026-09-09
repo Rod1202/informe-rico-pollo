@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    @apply bg-[#f4f7fb] text-slate-700;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; border: 3px solid #f4f7fb; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  .card { @apply bg-white rounded-2xl border border-slate-200/80 shadow-card; }
+  .card-t { @apply text-[11px] font-bold text-slate-800 tracking-wider uppercase; }
+  .card-s { @apply text-[11px] text-slate-400; }
+  .th { @apply text-[10px] font-bold uppercase tracking-wider text-slate-400 py-2 px-2.5 whitespace-nowrap; }
+  .td { @apply text-xs text-slate-700 py-2 px-2.5 whitespace-nowrap; }
+  .num { @apply tabular-nums; }
+}

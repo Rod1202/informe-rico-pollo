@@ -1,0 +1,21 @@
+# Despliegue del informe en Netlify.
+#
+# Si el repositorio se crea en la carpeta padre (InformeRicoPollo), hay que
+# indicar "rico-pollo" como base directory en Netlify, o mover este archivo
+# a la raíz del repositorio y descomentar la línea `base`.
+[build]
+  # base = "rico-pollo"
+  publish = "dist"
+  # No se usa `npm run build`: ese script regenera dataset.json desde los CSV
+  # crudos de utils/, que no se versionan. El sitio se compila con el dataset
+  # ya generado que sí está en src/data/.
+  command = "npm run build:web"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA de una sola página: cualquier ruta devuelve index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
