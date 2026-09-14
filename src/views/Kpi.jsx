@@ -489,16 +489,7 @@ export default function Kpi({ ctx }) {
         brecha={auditoria?.totales?.brecha ?? null}
       />
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Nota tono="ok" titulo="Costo total de impresión" icono="▸">
-          <strong className="num">{fMoney(m.facturacion)}</strong> en {etiqueta}: {fMoney(m.clicVariable)} de clic variable más{' '}
-          {fMoney(m.cargoFijo)} de cargo fijo por {m.equiposTotales} equipos. Costo por página{' '}
-          <strong className="num">{fMoney(m.costoPagina)}</strong>.
-        </Nota>
-        <Nota tono="azul" titulo="Tarifas aplicadas" icono="▸">
-          B/N {fTarifa(tarifas.bn)} · color {fTarifa(tarifas.color)} · adicional A3 {fTarifa(tarifas.colorA3)}, este último solo sobre las
-          páginas color de la serie <strong className="font-mono">{tarifas.serieA3}</strong>; su monocromo va a la tarifa B/N normal.
-        </Nota>
+      <section className="grid grid-cols-1 gap-3">
         <Nota tono="neutro" titulo="Qué mide cada bloque" icono="▸">
           El bloque azul sale del contador SDS y es lo que se factura. El bloque ámbar sale de NDD, única fuente que identifica quién
           imprimió, y sirve para atribuir el gasto a cada área y usuario.
