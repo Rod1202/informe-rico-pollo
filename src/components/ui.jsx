@@ -107,9 +107,9 @@ export function Barra({ label, right, value, color = C.blue, cap = 1 }) {
   const w = Math.max(0, Math.min(1, (value || 0) / cap))
   return (
     <div>
-      <div className="flex justify-between items-baseline gap-3 text-xs mb-1.5">
+      <div className="flex justify-between items-baseline gap-3 text-xs mb-1.5 flex-wrap">
         <span className="font-bold text-slate-800 tracking-wide uppercase text-[10px]">{label}</span>
-        <span className="text-[11px] text-slate-600 font-semibold num">{right}</span>
+        <span className="text-[11px] text-slate-600 font-semibold num text-right">{right}</span>
       </div>
       <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
         <div className="h-2.5 rounded-full transition-all" style={{ width: `${w * 100}%`, background: color }} />

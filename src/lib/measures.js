@@ -19,7 +19,7 @@ export function medidas(rows, tarifas) {
 
   const porSerie = new Map()
   for (const r of rows) {
-    const o = porSerie.get(r.serie) || { serie: r.serie, vol: 0, base: 0, difBN: 0, difColor: 0 }
+    const o = porSerie.get(r.serie) || { serie: r.serie, estado: r.estado, vol: 0, base: 0, difBN: 0, difColor: 0 }
     o.vol += r.pagBN + r.pagColor
     o.base += r.base
     o.difBN += r.finBN - r.inicioBN - r.pagBN
@@ -27,10 +27,19 @@ export function medidas(rows, tarifas) {
     porSerie.set(r.serie, o)
   }
   const series = [...porSerie.values()]
-  const equiposTotales = series.length
-  const equiposActivos = series.filter((s) => s.vol > 0).length
+
+  // El parque de "producción" es el que se mide contra el contrato. Los equipos
+  // en estado BACKUP no cuentan como sin actividad: no facturan cargo fijo y no
+  // se espera que generen volumetría.
+  const enBackup = (s) => s.estado === 'BACKUP'
+  const produccion = series.filter((s) => !enBackup(s))
+  const equiposBackup = series.filter(enBackup).length
+  const cargoFijoBackup = series.filter(enBackup).reduce((a, s) => a + s.base, 0)
+
+  const equiposTotales = produccion.length
+  const equiposActivos = produccion.filter((s) => s.vol > 0).length
   const equiposSinActividad = equiposTotales - equiposActivos
-  const cargoFijoSinActividad = series.filter((s) => s.vol === 0).reduce((a, s) => a + s.base, 0)
+  const cargoFijoSinActividad = produccion.filter((s) => s.vol === 0).reduce((a, s) => a + s.base, 0)
 
   const difContadorBN = suma(rows, (r) => r.finBN - r.inicioBN - r.pagBN)
   const difContadorColor = suma(rows, (r) => r.finColor - r.inicioColor - r.pagColor)
@@ -61,6 +70,8 @@ export function medidas(rows, tarifas) {
     equiposActivos,
     equiposSinActividad,
     cargoFijoSinActividad,
+    equiposBackup,
+    cargoFijoBackup,
     pctEquiposActivos: div(equiposActivos, equiposTotales),
     volPorEquipo: div(volumetria, equiposActivos),
     factPorEquipo: div(facturacion, equiposActivos),

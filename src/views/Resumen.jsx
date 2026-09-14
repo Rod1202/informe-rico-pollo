@@ -187,7 +187,7 @@ export default function Resumen({ ctx }) {
         <Card className="xl:col-span-5" title="Cumplimiento del parque" subtitle="Contra el contrato y el promedio del periodo">
           <Barra
             label="Parque operativo activo"
-            right={`${m.equiposActivos} de ${m.equiposTotales} equipos (${fPct(m.pctEquiposActivos)})`}
+            right={`${m.equiposActivos} de ${m.equiposTotales} equipos en Producción (${fPct(m.pctEquiposActivos)}) · ${m.equiposBackup} equipos en Backup`}
             value={m.pctEquiposActivos}
             color={C.blue}
           />
@@ -290,7 +290,7 @@ export default function Resumen({ ctx }) {
           ))}
         </div>
 
-        <Card className="lg:col-span-4" title="Control del parque" subtitle="Equipos que generan volumen y equipos ociosos">
+        <Card className="lg:col-span-4" title="Control del parque" subtitle="Equipos que generan volumen y equipos de backup">
           <div className="flex flex-col justify-around h-full gap-4">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div className="flex items-start gap-3">
@@ -320,24 +320,24 @@ export default function Resumen({ ctx }) {
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <p className="text-xs font-bold text-slate-800">Equipos sin actividad</p>
-                    <Badge tone="aviso">{m.equiposSinActividad} equipos</Badge>
+                    <p className="text-xs font-bold text-slate-800">Equipos de Backup</p>
+                    <Badge tone="aviso">{m.equiposBackup} equipos</Badge>
                   </div>
                   <p className="text-[10px] text-slate-500">
-                    Costo ocioso: <strong className="text-rose-600 font-bold num">{fMoney(m.cargoFijoSinActividad)}</strong>
+                    Costo backup: <strong className="text-rose-600 font-bold num">{fMoney(m.cargoFijoBackup)}</strong>
                     {!esAcumulado && ' en el mes'}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <Ring
-                  value={m.equiposTotales ? m.equiposSinActividad / m.equiposTotales : 0}
+                  value={m.equiposTotales + m.equiposBackup ? m.equiposBackup / (m.equiposTotales + m.equiposBackup) : 0}
                   label="Del parque"
                   color={ESTADO.aviso}
                   size={44}
                 />
                 <Ring
-                  value={m.facturacion ? m.cargoFijoSinActividad / m.facturacion : 0}
+                  value={m.facturacion ? m.cargoFijoBackup / m.facturacion : 0}
                   label="De la factura"
                   color={ESTADO.grave}
                   size={44}
