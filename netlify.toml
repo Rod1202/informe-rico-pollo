@@ -14,6 +14,19 @@
 [build.environment]
   NODE_VERSION = "20"
 
+  # Los PIN de acceso son variables VITE_*, y Vite las incrusta en el bundle al
+  # compilar: por diseño terminan en el JS que sirve el navegador. No son un
+  # secreto de servidor, son la reja de entrada entre personas de la empresa.
+  #
+  # Además son numeros de 4 digitos, y dataset.json trae ~1.6 MB de cifras y de
+  # titulos de trabajos: 11 de los 16 PIN aparecen ahi por pura coincidencia
+  # (el de Comercial cae dentro del titulo "BJE268 12014103 28082027 ...").
+  #
+  # Por las dos razones el escaneo de secretos no puede evaluarlos, y se le
+  # indica que los ignore. Los valores reales siguen viviendo solo en el .env
+  # local y en las variables de entorno de Netlify, nunca en el repositorio.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_PIN_GENERAL,VITE_PIN_KPI,VITE_PIN_GER_COMERCIAL,VITE_PIN_GER_FINANZAS,VITE_PIN_GER_GESTION_HUMANA,VITE_PIN_GER_MARKETING,VITE_PIN_GER_TI,VITE_PIN_GER_CALIDAD,VITE_PIN_GER_LOGISTICA,VITE_PIN_GER_PLANTA_AB,VITE_PIN_GER_GENERAL,VITE_PIN_GER_RETAIL,VITE_PIN_GER_AVICOLA,VITE_PIN_GER_PORCINA,VITE_PIN_GER_AGROINDUSTRIALES,VITE_PIN_GER_OFICINA_EJECUTIVA,VITE_PIN_GER_LEGAL,VITE_PIN_GER_CAPACIDADES"
+
 # SPA de una sola página: cualquier ruta devuelve index.html
 [[redirects]]
   from = "/*"

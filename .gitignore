@@ -14,3 +14,4 @@ vite.config.js.timestamp-*
 # repositorio es privado y se acepta guardar ahí información del personal.
 utils/ndd/
 utils/sds/
+
