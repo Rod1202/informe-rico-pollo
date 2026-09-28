@@ -1,13 +1,22 @@
-import React, { useMemo } from 'react'
+import React, { useCallback, useMemo } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, AreaChart, Area } from 'recharts'
 import { Card, Tabla, Leyenda, TooltipBox, Nota, Semaforo, Ring } from '../components/ui.jsx'
 import PanelAreas from '../components/PanelAreas.jsx'
 import { C, CAT, ESTADO } from '../lib/palette.js'
 import { nddAgrupar } from '../lib/measures.js'
+import { trabajosProrrateados } from '../lib/prorrateo.js'
 import { fInt, fMoney, fTarifa, fPct, fCompact, fFecha, fSigned, titulo } from '../lib/format.js'
 
 export default function Auditoria({ ctx }) {
-  const { m, auditoria, ndd, periodos, periodosSel, periodosInfo, meta, mensual, catalogoSeries, tarifas, filtros } = ctx
+  const {
+    m, auditoria, ndd, periodos, periodosSel, periodosInfo, meta, mensual, tarifas,
+    atribucion, areasAtribuidas, sinAuditoria
+  } = ctx
+
+  const trabajosDe = useCallback(
+    (area, usuario) => trabajosProrrateados(atribucion, ndd.porTrabajo, area, usuario, periodosSel, tarifas),
+    [atribucion, ndd.porTrabajo, periodosSel, tarifas]
+  )
 
   const comparativo = useMemo(
     () =>
@@ -253,12 +262,10 @@ export default function Auditoria({ ctx }) {
 
       
       <PanelAreas
-        ndd={ndd}
-        catalogoSeries={catalogoSeries}
-        periodosSel={periodosSel}
+        areas={areasAtribuidas}
+        trabajosDe={trabajosDe}
         tarifas={tarifas}
-        filtros={filtros}
-        brecha={auditoria.totales.brecha}
+        sinAuditoriaTotal={sinAuditoria}
       />
 
       

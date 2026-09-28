@@ -9,6 +9,7 @@ import Facturacion from './views/Facturacion.jsx'
 import Auditoria from './views/Auditoria.jsx'
 import Kpi from './views/Kpi.jsx'
 import { filtrar, medidas, serieMensual, auditoriaNDD, ytd } from './lib/measures.js'
+import { prorratear, agruparPorArea, agruparPorUsuario } from './lib/prorrateo.js'
 import { ROLES, verificarPin, configurado, CLAVE_SESION } from './lib/acceso.js'
 import { fFecha } from './lib/format.js'
 
@@ -77,6 +78,22 @@ export default function App() {
     const periodosInfo = periodos.filter((p) => periodosSel.includes(p.key))
     const nddParcial = periodosInfo.filter((p) => p.enNDD && p.nddParcial)
 
+    // Atribucion: reparte el volumen facturado del contador SDS entre los
+    // usuarios que NDD identifico en cada impresora. Se calcula una sola vez
+    // aca porque la consumen tanto Gerencia como Auditoria.
+    const atribucion = prorratear({
+      contador,
+      porSerieUsuario: ndd.porSerieUsuario,
+      catalogoSeries,
+      periodosSel,
+      tarifas,
+      filtros,
+      periodos
+    })
+    const areasAtribuidas = agruparPorArea(atribucion, tarifas)
+    const usuariosAtribuidos = agruparPorUsuario(atribucion, tarifas)
+    const sinAuditoria = areasAtribuidas.reduce((a, b) => a + b.sinAuditoria, 0)
+
     return {
       periodosSel,
       periodosInfo,
@@ -88,11 +105,15 @@ export default function App() {
       totalContexto,
       acumulado,
       auditoria,
+      atribucion,
+      areasAtribuidas,
+      usuariosAtribuidos,
+      sinAuditoria,
       ytd: acum,
       nddParcial,
       esAcumulado: filtros.periodo === 'TODOS'
     }
-  }, [filtros, contador, periodos, tarifas, ndd.porSerie, ultimo])
+  }, [filtros, contador, periodos, tarifas, ndd.porSerie, ndd.porSerieUsuario, catalogoSeries, ultimo])
 
   if (!rol) return <Login onAcceso={entrar} verificar={verificarPin} configurado={configurado} />
 

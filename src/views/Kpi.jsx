@@ -1,9 +1,12 @@
-import React, { useMemo, useState } from 'react'
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList } from 'recharts'
-import { Card, Kpi as Tile, Tabla, Badge, Delta, Leyenda, TooltipBox, Nota, Fuente } from '../components/ui.jsx'
+import React, { useCallback, useMemo, useState } from 'react'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts'
+import { Card, Kpi as Tile, Tabla, Badge, Delta, TooltipBox, Nota, Fuente, Buscador, normaliza } from '../components/ui.jsx'
 import PanelAreas from '../components/PanelAreas.jsx'
+import HistoricoLinea from '../components/HistoricoLinea.jsx'
+import TopRanking, { armarTop } from '../components/TopRanking.jsx'
 import { C, CAT } from '../lib/palette.js'
-import { filtrar, medidas, comparar, periodoPrevio, nddPorArea } from '../lib/measures.js'
+import { filtrar, medidas, comparar, periodoPrevio, serieMensual } from '../lib/measures.js'
+import { prorratear, agruparPorUsuario, trabajosProrrateados, SIN_AUDITORIA } from '../lib/prorrateo.js'
 import { fInt, fMoney, fTarifa, fPct, fDelta, fCompact, titulo } from '../lib/format.js'
 
 const IC = {
@@ -26,7 +29,7 @@ function Var({ pct, alta, sinBase }) {
   if (pct === null || pct === undefined || !Number.isFinite(pct)) return <span className="text-slate-300">—</span>
   const sube = pct > 0.0005
   const baja = pct < -0.0005
-  
+
   const tono = sube ? 'text-rose-600' : baja ? 'text-emerald-600' : 'text-slate-500'
   return (
     <span className={`inline-flex items-center gap-0.5 font-semibold ${tono}`}>
@@ -51,13 +54,17 @@ const recorta = (s, max = 14) => {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t
 }
 
+const nombreUsuario = (u) =>
+  u.usuario === SIN_AUDITORIA ? 'Sin auditoría NDD' : u.nombre && u.nombre !== '-' ? u.nombre : u.usuario
+
+
 export default function Kpi({ ctx }) {
   const {
-    m, mensual, actual, esAcumulado, contador, tarifas, periodos, filtros,
-    ndd, catalogoSeries, periodosSel, meta, auditoria
+    m, mensual, actual, esAcumulado, contador, tarifas, periodos, filtros, rowsTodoPeriodo,
+    ndd, catalogoSeries, periodosSel, atribucion, areasAtribuidas, usuariosAtribuidos, sinAuditoria
   } = ctx
 
-  
+
   const previo = useMemo(() => periodoPrevio(periodos, filtros.periodo), [periodos, filtros.periodo])
   const rowsActual = useMemo(() => filtrar(contador, filtros), [contador, filtros])
   const rowsPrevio = useMemo(
@@ -65,108 +72,169 @@ export default function Kpi({ ctx }) {
     [contador, filtros, previo]
   )
   const mPrev = useMemo(() => medidas(rowsPrevio, tarifas), [rowsPrevio, tarifas])
-  
+
   const sinBase = !previo || rowsPrevio.length === 0
   const pct = (a, b) => (sinBase || !b ? null : (a - b) / b)
 
   const etiqueta = esAcumulado ? 'el acumulado' : (actual?.label ?? '')
   const etiquetaPrev = sinBase ? null : previo.label
 
-  
+
+  // Los tres conceptos que componen el clic variable del contrato.
   const desglose = [
     {
       tipo: 'Monocromo (B/N)',
       detalle: `${fTarifa(tarifas.bn)} por página`,
+      icono: IC.bn,
       pags: m.volBN, costo: m.clicBN, pagsPrev: mPrev.volBN, costoPrev: mPrev.clicBN,
       color: CAT[0]
     },
     {
       tipo: 'Color estándar',
       detalle: `${fTarifa(tarifas.color)} por página`,
+      icono: IC.color,
       pags: m.volColorStd, costo: m.clicColorStd, pagsPrev: mPrev.volColorStd, costoPrev: mPrev.clicColorStd,
       color: CAT[2]
     },
     {
       tipo: 'Color A3 adicional',
       detalle: `${fTarifa(tarifas.colorA3)} · solo ${tarifas.serieA3}`,
+      icono: IC.color,
       pags: m.volColorA3, costo: m.clicColorA3, pagsPrev: mPrev.volColorA3, costoPrev: mPrev.clicColorA3,
       color: CAT[3]
     }
   ].map((d) => ({
     ...d,
-    __key: d.tipo,
     pctPags: m.volumetria ? d.pags / m.volumetria : 0,
     pctCosto: m.clicVariable ? d.costo / m.clicVariable : 0,
-    varCosto: pct(d.costo, d.costoPrev)
+    varCosto: pct(d.costo, d.costoPrev),
+    varPags: pct(d.pags, d.pagsPrev)
   }))
 
-  
-  const meses = mensual.serie
-    .filter((s) => s.tiene)
-    .map((s) => ({
-      label: s.label,
-      volBN: s.volBN,
-      volColor: s.volColor,
-      total: s.volumetria,
-      costoBN: +s.clicBN.toFixed(2),
-      costoColor: +s.clicColor.toFixed(2),
-      costoClic: +s.clicVariable.toFixed(2)
-    }))
 
-  
+  // Ranking SDS por dimension, y el de areas que manda el resto de la vista.
   const [dimension, setDimension] = useState('area')
   const dimActiva = DIMENSIONES.find((d) => d.id === dimension) ?? DIMENSIONES[0]
   const rankingDim = useMemo(() => {
     const r = comparar(rowsActual, rowsPrevio, dimension, tarifas)
-    
     return dimension === 'serie' ? r.filter((x) => x.volumetria > 0 || x.volPrev > 0) : r
   }, [rowsActual, rowsPrevio, dimension, tarifas])
   const rankingAreas = useMemo(() => comparar(rowsActual, rowsPrevio, 'area', tarifas), [rowsActual, rowsPrevio, tarifas])
   const catSerie = useMemo(() => new Map(catalogoSeries.map((c) => [c.serie, c])), [catalogoSeries])
+
+
+  // Area seleccionada: la eligen tanto el top 5 como el grafico de ranking, y
+  // filtra la tabla de usuarios y el panel de detalle.
+  const [areaSel, setAreaSel] = useState(null)
+  const alternarArea = useCallback((a) => setAreaSel((prev) => (prev === a ? null : a)), [])
+
+
+  // Reparto del periodo anterior, necesario para la variacion del top de usuarios.
+  const usuariosPrev = useMemo(() => {
+    if (!previo) return []
+    const res = prorratear({
+      contador,
+      porSerieUsuario: ndd.porSerieUsuario,
+      catalogoSeries,
+      periodosSel: [previo.key],
+      tarifas,
+      filtros: { ...filtros, periodo: previo.key },
+      periodos
+    })
+    return agruparPorUsuario(res, tarifas)
+  }, [previo, contador, ndd.porSerieUsuario, catalogoSeries, tarifas, filtros])
+
+  const mapaUsuariosPrev = useMemo(() => new Map(usuariosPrev.map((u) => [u.usuario, u])), [usuariosPrev])
+
+
+  const topAreas = useMemo(
+    () =>
+      armarTop(rankingAreas, {
+        id: (a) => a.clave,
+        etiqueta: (a) => titulo(a.clave),
+        valor: (a) => a.volumetria,
+        valorPrev: (a) => a.volPrev
+      }),
+    [rankingAreas]
+  )
+
+  // El top de usuarios es un ranking de personas, asi que deja fuera la fila
+  // tecnica de volumen sin auditoria (si existe, se explica en la tabla).
+  const topUsuarios = useMemo(() => {
+    const mapaActual = new Map(usuariosAtribuidos.map((u) => [u.usuario, u]))
+    const claves = [...new Set([...mapaActual.keys(), ...mapaUsuariosPrev.keys()])].filter((k) => k !== SIN_AUDITORIA)
+    const items = claves.map((k) => ({
+      usuario: k,
+      actual: mapaActual.get(k) ?? null,
+      prev: mapaUsuariosPrev.get(k) ?? null
+    }))
+    return armarTop(items, {
+      id: (x) => x.usuario,
+      etiqueta: (x) => nombreUsuario(x.actual ?? x.prev ?? { usuario: x.usuario, nombre: '-' }),
+      valor: (x) => x.actual?.total ?? 0,
+      valorPrev: (x) => x.prev?.total ?? 0
+    })
+  }, [usuariosAtribuidos, mapaUsuariosPrev])
+
+  const personasAtribuidas = useMemo(
+    () => usuariosAtribuidos.filter((u) => u.usuario !== SIN_AUDITORIA).length,
+    [usuariosAtribuidos]
+  )
+
 
   const topAreasChart = rankingAreas
     .filter((a) => a.volumetria > 0)
     .slice(0, 12)
     .map((a) => ({ ...a, corto: recorta(a.clave) }))
 
-  
-  const areasNdd = useMemo(
-    () => nddPorArea(ndd.porSerieUsuario, catalogoSeries, periodosSel, tarifas, filtros),
-    [ndd.porSerieUsuario, catalogoSeries, periodosSel, tarifas, filtros]
-  )
-  const usuariosRank = useMemo(() => {
-    const g = new Map()
-    for (const a of areasNdd) {
-      for (const u of a.usuarios) {
-        const o = g.get(u.usuario) ?? { usuario: u.usuario, nombre: u.nombre, mono: 0, color: 0, total: 0, jobs: 0, costo: 0, areas: new Set() }
-        o.mono += u.mono
-        o.color += u.color
-        o.total += u.total
-        o.jobs += u.jobs
-        o.costo += u.costo
-        o.areas.add(a.area)
-        if (o.nombre === '-' && u.nombre !== '-') o.nombre = u.nombre
-        g.set(u.usuario, o)
-      }
-    }
-    return [...g.values()]
-      .map((o) => ({ ...o, areas: [...o.areas], __key: o.usuario }))
-      .sort((a, b) => b.total - a.total)
-  }, [areasNdd])
 
-  const totalNdd = usuariosRank.reduce((a, b) => a + b.total, 0)
+  // Tabla de usuarios: general, o solo los del area elegida.
+  const areaElegida = useMemo(
+    () => (areaSel ? areasAtribuidas.find((a) => a.area === areaSel) ?? null : null),
+    [areaSel, areasAtribuidas]
+  )
+  // Base de la tabla: el ranking general, o solo el area elegida arriba.
+  const usuariosBase = areaElegida ? areaElegida.usuarios : usuariosAtribuidos
+  const totalBase = usuariosBase.reduce((a, b) => a + b.total, 0)
+
+  const [busqueda, setBusqueda] = useState('')
+  const usuariosTabla = useMemo(() => {
+    const q = normaliza(busqueda)
+    if (!q) return usuariosBase
+    return usuariosBase.filter((u) => normaliza(nombreUsuario(u)).includes(q) || normaliza(u.usuario).includes(q))
+  }, [usuariosBase, busqueda])
+  const totalTabla = usuariosTabla.reduce((a, b) => a + b.total, 0)
+  const filtrando = usuariosTabla.length !== usuariosBase.length
+
+  // Serie mensual de lo que muestre el ranking: el area elegida, o el
+  // consolidado mientras no haya ninguna.
+  const mensualArea = useMemo(() => {
+    const rows = areaSel ? rowsTodoPeriodo.filter((r) => r.area === areaSel) : rowsTodoPeriodo
+    return serieMensual(rows, periodos, tarifas)
+  }, [areaSel, rowsTodoPeriodo, periodos, tarifas])
+
+  const trabajosDe = useCallback(
+    (area, usuario) => trabajosProrrateados(atribucion, ndd.porTrabajo, area, usuario, periodosSel, tarifas),
+    [atribucion, ndd.porTrabajo, periodosSel, tarifas]
+  )
+
+  const fueraContrato = atribucion.fueraContrato
+  const totalFuera = fueraContrato.reduce((a, b) => a + b.total, 0)
 
   return (
     <>
-      
+
       <Fuente
         tono="sds"
         titulo="Facturación · contador SDS"
-        descripcion="Volumetría y costos que se cobran en el contrato. Todo lo de este bloque es la factura."
+        descripcion="Volumetría y costos que se cobran en el contrato. Todo este tablero toma el contador SDS como el 100%."
         etiqueta="Fuente SDS"
       />
 
-      
+      {/* 1 · Evolución histórica, con pestaña volumetría / facturación. */}
+      <HistoricoLinea mensual={mensual} periodoActivo={filtros.periodo} esAcumulado={esAcumulado} />
+
+      {/* 2 · KPIs del periodo. */}
       <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
         <Tile
           destacado
@@ -213,119 +281,115 @@ export default function Kpi({ ctx }) {
         />
       </section>
 
-      
-      <section className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-        <Card
-          className="xl:col-span-5"
-          title="Impresiones B/N y color"
-          subtitle="Volumetría, participación y costo del clic en el periodo"
-          right={sinBase ? <Badge tone="neutro">sin mes previo</Badge> : <Badge tone="azul">vs {etiquetaPrev}</Badge>}
-        >
-          <Tabla
-            initialSort={{ key: 'costo', dir: 'desc' }}
-            columnas={[
-              {
-                key: 'tipo',
-                label: 'Tipo de impresión',
-                render: (r) => (
-                  <span className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-6 rounded-full shrink-0" style={{ background: r.color }} />
-                    <span className="min-w-0">
-                      <span className="block font-semibold text-slate-800 leading-tight">{r.tipo}</span>
-                      <span className="block text-[10px] text-slate-400 leading-tight">{r.detalle}</span>
-                    </span>
-                  </span>
-                )
-              },
-              { key: 'pags', label: 'Páginas', align: 'right', render: (r) => fInt(r.pags) },
-              { key: 'pctPags', label: '% vol.', align: 'right', render: (r) => fPct(r.pctPags) },
-              { key: 'costo', label: 'Costo', align: 'right', render: (r) => <strong className="text-slate-900">{fMoney(r.costo)}</strong> },
-              { key: 'pctCosto', label: '% costo', align: 'right', render: (r) => fPct(r.pctCosto) },
-              { key: 'varCosto', label: 'Var. costo', align: 'right', render: (r) => <Var pct={r.varCosto} sinBase={sinBase} /> }
-            ]}
-            filas={desglose}
-            pie={{
-              tipo: 'TOTAL CLIC VARIABLE',
-              pags: fInt(m.volumetria),
-              pctPags: '100.0%',
-              costo: fMoney(m.clicVariable),
-              pctCosto: '100.0%',
-              varCosto: sinBase ? '—' : fDelta(pct(m.clicVariable, mPrev.clicVariable), 1)
-            }}
-          />
-          <Nota tono="aviso" titulo="Peso real del color" icono="▸">
-            El color es el <strong className="num">{fPct(m.pctVolColor)}</strong> del volumen pero el{' '}
-            <strong className="num">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)}</strong> del clic. La serie{' '}
-            <strong className="font-mono">{tarifas.serieA3}</strong> concentra <strong className="num">{fMoney(m.clicColorA3)}</strong> con
-            solo {fInt(m.volColorA3)} páginas por la tarifa A3 de {fTarifa(tarifas.colorA3)}.
-          </Nota>
-        </Card>
-
-        <Card
-          className="xl:col-span-7"
-          title="Consolidado mensual · B/N vs color"
-          subtitle="Volumetría y costo del clic mes a mes"
-          right={<Badge tone="azul">{meses.length} meses</Badge>}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1">Volumetría (páginas)</p>
-              <div className="h-[210px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={meses} margin={{ top: 16, right: 6, left: -12, bottom: 0 }}>
-                    <CartesianGrid stroke={C.grid} vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.text, fontWeight: 600 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 9, fill: C.axis }} tickFormatter={fCompact} axisLine={false} tickLine={false} width={46} />
-                    <Tooltip content={<TooltipBox />} cursor={{ fill: 'rgba(0,102,255,0.05)' }} />
-                    <Bar dataKey="volBN" name="B/N" stackId="v" fill={CAT[0]} maxBarSize={44} />
-                    <Bar dataKey="volColor" name="Color" stackId="v" fill={CAT[3]} maxBarSize={44} radius={[4, 4, 0, 0]}>
-                      <LabelList dataKey="total" position="top" formatter={fCompact} style={{ fontSize: 9, fill: C.textMuted, fontWeight: 700 }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+      {/* 3 · Composición del clic variable: B/N, color estándar y color A3. */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {desglose.map((d) => (
+          <div key={d.tipo} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
+            <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: d.color }} />
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div className="min-w-0">
+                <p className="text-[12px] font-bold text-slate-800 leading-tight">{d.tipo}</p>
+                <p className="text-[10px] text-slate-400 leading-tight num mt-0.5">{d.detalle}</p>
               </div>
+              <span className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${d.color}18`, color: d.color }}>
+                <Icono d={d.icono} />
+              </span>
             </div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wide mb-1">Costo del clic (US$)</p>
-              <div className="h-[210px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={meses} margin={{ top: 16, right: 6, left: -8, bottom: 0 }}>
-                    <CartesianGrid stroke={C.grid} vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.text, fontWeight: 600 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 9, fill: C.axis }} tickFormatter={(v) => `$${fCompact(v)}`} axisLine={false} tickLine={false} width={52} />
-                    <Tooltip content={<TooltipBox formato={fMoney} />} cursor={{ fill: 'rgba(0,102,255,0.05)' }} />
-                    <Bar dataKey="costoBN" name="Clic B/N" stackId="c" fill={CAT[0]} maxBarSize={44} />
-                    <Bar dataKey="costoColor" name="Clic color" stackId="c" fill={CAT[3]} maxBarSize={44} radius={[4, 4, 0, 0]}>
-                      <LabelList
-                        dataKey="costoClic"
-                        position="top"
-                        formatter={(v) => `$${fCompact(v)}`}
-                        style={{ fontSize: 9, fill: C.textMuted, fontWeight: 700 }}
-                      />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+
+            <p className="text-2xl font-bold text-slate-900 num leading-none">{fMoney(d.costo)}</p>
+            <p className="text-[10px] text-slate-500 num mt-1">
+              {fPct(d.pctCosto)} del clic variable
+              {!sinBase && (
+                <>
+                  {' · '}
+                  <span className={d.varCosto > 0.0005 ? 'text-rose-600 font-semibold' : d.varCosto < -0.0005 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}>
+                    {fDelta(d.varCosto, 1)}
+                  </span>{' '}
+                  vs {etiquetaPrev}
+                </>
+              )}
+            </p>
+
+            <div className="mt-3 pt-3 border-t border-slate-100 flex items-end justify-between gap-2">
+              <span className="min-w-0">
+                <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400">Páginas</span>
+                <span className="block text-[13px] font-bold text-slate-800 num leading-tight">{fInt(d.pags)}</span>
+              </span>
+              <span className="text-right shrink-0">
+                <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400">% del volumen</span>
+                <span className="block text-[13px] font-bold text-slate-800 num leading-tight">{fPct(d.pctPags)}</span>
+              </span>
+            </div>
+
+            {/* Proporción del costo dentro del clic variable. */}
+            <div className="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${Math.max(1, d.pctCosto * 100)}%`, background: d.color }} />
             </div>
           </div>
-          <Leyenda
-            className="mt-2 justify-center"
-            items={[{ label: 'Monocromo (B/N)', color: CAT[0] }, { label: 'Color', color: CAT[3] }]}
-          />
-        </Card>
+        ))}
       </section>
 
-      
+      <Nota tono="aviso" titulo="Peso real del color" icono="▸">
+        El color es el <strong className="num">{fPct(m.pctVolColor)}</strong> del volumen pero el{' '}
+        <strong className="num">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)}</strong> del clic. La serie{' '}
+        <strong className="font-mono">{tarifas.serieA3}</strong> concentra <strong className="num">{fMoney(m.clicColorA3)}</strong> con solo{' '}
+        {fInt(m.volColorA3)} páginas por la tarifa A3 de {fTarifa(tarifas.colorA3)}.
+      </Nota>
+
+      {/* 4 · Los dos top 5, con variación de consumo y de puesto. */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <TopRanking
+          title="Top 5 áreas"
+          subtitle={sinBase ? 'El periodo seleccionado no tiene mes previo con el cual comparar' : `Páginas facturadas en ${etiqueta}, contra ${etiquetaPrev}`}
+          right={<Badge tone="azul">{rankingAreas.filter((a) => a.volumetria > 0).length} áreas</Badge>}
+          filas={topAreas}
+          sinBase={sinBase}
+          onClic={alternarArea}
+          activo={areaSel}
+          vacio="Sin consumo facturado para los filtros aplicados."
+        />
+        <TopRanking
+          title="Top 5 usuarios"
+          subtitle={sinBase ? 'Reparto del volumen facturado entre los usuarios identificados' : `Volumen atribuido en ${etiqueta}, contra ${etiquetaPrev}`}
+          right={<Badge tone="azul">{personasAtribuidas} usuarios</Badge>}
+          filas={topUsuarios}
+          sinBase={sinBase}
+          vacio="Sin usuarios identificados para los filtros aplicados."
+        />
+      </section>
+
+      {/* 5 · Ranking de áreas (clickeable) y variación contra el periodo previo. */}
       <section className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         <Card
           className="xl:col-span-6"
           title="Consumo por área · ranking"
-          subtitle={`Páginas facturadas por el contador SDS en ${etiqueta}`}
-          right={<Badge tone="azul">top {topAreasChart.length} de {rankingAreas.length}</Badge>}
+          subtitle={`Páginas facturadas por el contador SDS en ${etiqueta}. Clic en una barra para filtrar el detalle de abajo.`}
+          right={
+            areaSel ? (
+              <button
+                type="button"
+                onClick={() => setAreaSel(null)}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-mt-blue/30 bg-mt-blueTint text-mt-blue hover:bg-mt-blue hover:text-white transition-colors"
+              >
+                {titulo(areaSel)} · quitar filtro ✕
+              </button>
+            ) : (
+              <Badge tone="azul">top {topAreasChart.length} de {rankingAreas.length}</Badge>
+            )
+          }
         >
           <div style={{ height: Math.max(220, topAreasChart.length * 30 + 30) }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topAreasChart} layout="vertical" margin={{ top: 4, right: 78, left: 4, bottom: 4 }}>
+              <BarChart
+                data={topAreasChart}
+                layout="vertical"
+                margin={{ top: 4, right: 78, left: 4, bottom: 4 }}
+                className="cursor-pointer"
+                onClick={(estado) => {
+                  const clave = estado?.activePayload?.[0]?.payload?.clave
+                  if (clave) alternarArea(clave)
+                }}
+              >
                 <CartesianGrid stroke={C.grid} horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: C.axis }} tickFormatter={fCompact} axisLine={false} tickLine={false} />
                 <YAxis
@@ -340,7 +404,10 @@ export default function Kpi({ ctx }) {
                   content={<TooltipBox titulo={(l, p) => titulo(p?.[0]?.payload?.clave ?? l)} />}
                   cursor={{ fill: 'rgba(0,102,255,0.06)' }}
                 />
-                <Bar dataKey="volumetria" name="Páginas" fill={C.blue} radius={[0, 4, 4, 0]} maxBarSize={20}>
+                <Bar dataKey="volumetria" name="Páginas" radius={[0, 4, 4, 0]} maxBarSize={20}>
+                  {topAreasChart.map((a) => (
+                    <Cell key={a.clave} fill={!areaSel || areaSel === a.clave ? C.blue : C.gray} />
+                  ))}
                   <LabelList dataKey="volumetria" position="right" formatter={fInt} style={{ fontSize: 10, fill: C.text, fontWeight: 700 }} />
                 </Bar>
               </BarChart>
@@ -374,6 +441,8 @@ export default function Kpi({ ctx }) {
           <Tabla
             maxAltura="392px"
             initialSort={{ key: 'volumetria', dir: 'desc' }}
+            onFila={dimension === 'area' ? (r) => alternarArea(r.clave) : undefined}
+            filaActiva={dimension === 'area' ? areaSel : undefined}
             columnas={[
               {
                 key: 'clave',
@@ -421,78 +490,178 @@ export default function Kpi({ ctx }) {
         </Card>
       </section>
 
-      
-      <Fuente
-        tono="ndd"
-        titulo="Atribución de consumo · auditoría NDD"
-        descripcion={`Quién imprime y qué imprime. NDD cuenta páginas enviadas a la cola, siempre más que el contador, así que estos totales no son la factura: valorizan el gasto para poder atribuirlo (${fInt(meta.statsNDD.trabajos)} trabajos).`}
-        etiqueta="Fuente NDD"
+
+      {/* Evolución de lo que este seleccionado en el ranking de arriba. */}
+      <HistoricoLinea
+        mensual={mensualArea}
+        periodoActivo={filtros.periodo}
+        esAcumulado={esAcumulado}
+        title={areaSel ? `Evolución de ${titulo(areaSel)}` : 'Evolución por área'}
+        subtitle={
+          areaSel
+            ? `Cómo viene consumiendo esta área mes a mes. Clic en otra barra del ranking de arriba para cambiarla, o en la misma para volver al consolidado.`
+            : 'Consolidado de todas las áreas. Clic en una barra del ranking de arriba para ver la evolución de un área concreta.'
+        }
+        etiqueta={areaSel ? titulo(areaSel) : 'todas las áreas'}
+        vacio="Esta área no registra consumo en ningún periodo."
       />
 
+      {/* 6 · Usuarios: top general, o solo los del área elegida arriba. */}
       <Card
-        title="Consumo por usuario · ranking"
-        subtitle="Quién imprime más, en qué áreas y cuánto representa ese consumo"
-        right={<Badge tone="aviso">{fInt(usuariosRank.length)} usuarios</Badge>}
+        title={areaElegida ? `Usuarios de ${titulo(areaElegida.area)}` : 'Consumo por usuario · ranking general'}
+        subtitle={
+          areaElegida
+            ? 'Solo los usuarios que imprimieron en las impresoras de esta área. Quita el filtro para volver al ranking general.'
+            : 'Quién concentra el volumen facturado, en qué áreas y cuánto representa ese consumo'
+        }
+        right={
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            <Buscador valor={busqueda} onCambio={setBusqueda} placeholder="Buscar usuario o cuenta…" />
+            {areaSel ? (
+              <button
+                type="button"
+                onClick={() => setAreaSel(null)}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-mt-blue/30 bg-mt-blueTint text-mt-blue hover:bg-mt-blue hover:text-white transition-colors"
+              >
+                {titulo(areaSel)} · ver todos ✕
+              </button>
+            ) : (
+              <Badge tone="azul">{fInt(personasAtribuidas)} usuarios</Badge>
+            )}
+          </div>
+        }
       >
         <Tabla
           maxAltura="420px"
           initialSort={{ key: 'total', dir: 'desc' }}
+          vacio={busqueda ? `Ningún usuario coincide con «${busqueda}».` : 'Sin usuarios para los filtros aplicados.'}
           columnas={[
             {
               key: 'nombre',
               label: 'Usuario',
               render: (r) => (
-                <span className="font-semibold text-slate-800 truncate max-w-[240px] inline-block align-bottom">
-                  {r.nombre && r.nombre !== '-' ? r.nombre : r.usuario}
+                <span
+                  className={`truncate max-w-[240px] inline-block align-bottom ${
+                    r.usuario === SIN_AUDITORIA ? 'font-semibold text-amber-700 italic' : 'font-semibold text-slate-800'
+                  }`}
+                >
+                  {nombreUsuario(r)}
                 </span>
               )
             },
-            { key: 'usuario', label: 'Cuenta', render: (r) => <span className="text-slate-400 truncate max-w-[150px] inline-block align-bottom">{r.usuario}</span> },
             {
-              key: 'areas',
-              label: 'Áreas',
-              sortValue: (r) => r.areas.length,
-              render: (r) => <span className="text-slate-500 truncate max-w-[220px] inline-block align-bottom">{r.areas.map(titulo).join(' · ')}</span>
+              key: 'usuario',
+              label: 'Cuenta',
+              render: (r) => (
+                <span className="text-slate-400 truncate max-w-[150px] inline-block align-bottom">
+                  {r.usuario === SIN_AUDITORIA ? 'sin registro NDD' : r.usuario}
+                </span>
+              )
             },
-            { key: 'jobs', label: 'Trabajos', align: 'right', render: (r) => fInt(r.jobs) },
+            ...(areaElegida
+              ? []
+              : [
+                  {
+                    key: 'areas',
+                    label: 'Áreas',
+                    sortValue: (r) => r.areas.length,
+                    render: (r) => (
+                      <span className="text-slate-500 truncate max-w-[220px] inline-block align-bottom">{r.areas.map(titulo).join(' · ')}</span>
+                    )
+                  }
+                ]),
+            { key: 'jobs', label: 'Trabajos', align: 'right', render: (r) => (r.usuario === SIN_AUDITORIA ? '—' : fInt(r.jobs)) },
             { key: 'mono', label: 'B/N', align: 'right', render: (r) => fInt(r.mono) },
             { key: 'color', label: 'Color', align: 'right', render: (r) => fInt(r.color) },
             { key: 'total', label: 'Págs', align: 'right', render: (r) => <strong className="text-slate-900">{fInt(r.total)}</strong> },
-            { key: 'pctTotal', label: '% del total', align: 'right', sortValue: (r) => r.total, render: (r) => fPct(totalNdd ? r.total / totalNdd : 0) },
+            { key: 'pctTotal', label: '% del total', align: 'right', sortValue: (r) => r.total, render: (r) => fPct(totalBase ? r.total / totalBase : 0) },
             { key: 'costo', label: 'Costo', align: 'right', render: (r) => <span className="font-semibold text-mt-blue">{fMoney(r.costo)}</span> }
           ]}
-          filas={usuariosRank.slice(0, 50)}
+          filas={usuariosTabla.slice(0, 50)}
           pie={{
-            nombre: `TOTAL · ${usuariosRank.length} usuarios`,
-            jobs: fInt(usuariosRank.reduce((a, b) => a + b.jobs, 0)),
-            mono: fInt(usuariosRank.reduce((a, b) => a + b.mono, 0)),
-            color: fInt(usuariosRank.reduce((a, b) => a + b.color, 0)),
-            total: fInt(totalNdd),
-            pctTotal: '100.0%',
-            costo: fMoney(usuariosRank.reduce((a, b) => a + b.costo, 0))
+            nombre: filtrando
+              ? `FILTRADO · ${usuariosTabla.length} de ${usuariosBase.length} usuarios`
+              : `TOTAL · ${usuariosBase.length} usuarios`,
+            jobs: fInt(usuariosTabla.reduce((a, b) => a + b.jobs, 0)),
+            mono: fInt(usuariosTabla.reduce((a, b) => a + b.mono, 0)),
+            color: fInt(usuariosTabla.reduce((a, b) => a + b.color, 0)),
+            total: fInt(totalTabla),
+            pctTotal: fPct(totalBase ? totalTabla / totalBase : 0),
+            costo: fMoney(usuariosTabla.reduce((a, b) => a + b.costo, 0))
           }}
         />
-        <Nota tono="aviso" titulo="No comparar este total con la factura" icono="▸">
-          NDD registra las páginas que se envían a la cola de impresión, siempre más que las que llega a contar el equipo, así que este
-          total supera al clic facturado de {fMoney(m.clicVariable)}. Sirve para saber <strong>quién</strong> genera el gasto, no cuánto
-          se cobra.
+        <Nota tono="ok" titulo="Este total sí es la factura" icono="▸">
+          El reparto suma <strong className="num">{fInt(totalBase)}</strong> páginas
+          {areaElegida ? ` en ${titulo(areaElegida.area)}` : ''}, exactamente el volumen del contador SDS
+          {areaElegida ? '' : <> de {etiqueta} (<strong className="num">{fInt(m.volumetria)}</strong> págs)</>}. NDD ya no aporta el
+          número: aporta solo la proporción con la que se reparte.
         </Nota>
       </Card>
 
-      
+      {/* 7 · Detalle área → usuario → trabajo, gobernado por la misma selección. */}
       <PanelAreas
-        ndd={ndd}
-        catalogoSeries={catalogoSeries}
-        periodosSel={periodosSel}
+        areas={areasAtribuidas}
+        trabajosDe={trabajosDe}
         tarifas={tarifas}
-        filtros={filtros}
-        brecha={auditoria?.totales?.brecha ?? null}
+        area={areaSel}
+        onArea={alternarArea}
+        mostrarRanking={false}
+        sinAuditoriaTotal={sinAuditoria}
       />
 
+      {/* 8 · Lo que NDD ve fuera del contrato: no se factura, va aparte. */}
+      {fueraContrato.length > 0 && (
+        <Card
+          title="Impresoras fuera del contrato"
+          subtitle="NDD registra actividad en estas series, pero no están en el contador SDS: no se facturan y no entran en ningún reparto"
+          right={<Badge tone="aviso">{fueraContrato.length} series · no facturable</Badge>}
+        >
+          <Tabla
+            maxAltura="280px"
+            initialSort={{ key: 'total', dir: 'desc' }}
+            columnas={[
+              { key: 'serie', label: 'Serie', render: (r) => <span className="font-mono text-[11px] font-semibold text-slate-800">{r.serie}</span> },
+              {
+                key: 'usuarios',
+                label: 'Usuarios',
+                sortValue: (r) => r.usuarios.length,
+                render: (r) => (
+                  <span className="text-slate-500 truncate max-w-[260px] inline-block align-bottom">
+                    {r.usuarios.slice(0, 3).map((u) => (u.nombre && u.nombre !== '-' ? u.nombre : u.usuario)).join(' · ')}
+                    {r.usuarios.length > 3 ? ` +${r.usuarios.length - 3}` : ''}
+                  </span>
+                )
+              },
+              { key: 'jobs', label: 'Trabajos', align: 'right', render: (r) => fInt(r.jobs) },
+              { key: 'mono', label: 'B/N', align: 'right', render: (r) => fInt(r.mono) },
+              { key: 'color', label: 'Color', align: 'right', render: (r) => fInt(r.color) },
+              { key: 'total', label: 'Págs NDD', align: 'right', render: (r) => <strong className="text-slate-900">{fInt(r.total)}</strong> },
+              { key: 'costo', label: 'Costo referencial', align: 'right', render: (r) => <span className="text-slate-500">{fMoney(r.costo)}</span> }
+            ]}
+            filas={fueraContrato}
+            pie={{
+              serie: `TOTAL · ${fueraContrato.length} series`,
+              jobs: fInt(fueraContrato.reduce((a, b) => a + b.jobs, 0)),
+              mono: fInt(fueraContrato.reduce((a, b) => a + b.mono, 0)),
+              color: fInt(fueraContrato.reduce((a, b) => a + b.color, 0)),
+              total: fInt(totalFuera),
+              costo: fMoney(fueraContrato.reduce((a, b) => a + b.costo, 0))
+            }}
+          />
+          <Nota tono="aviso" titulo="Por qué están fuera del reparto" icono="▸">
+            Estas <strong className="num">{fInt(totalFuera)}</strong> páginas no tienen contador SDS contra el cual prorratearse, así que no
+            forman parte de la factura ni del ranking de áreas. El costo mostrado es solo referencial, valorizado a tarifa de contrato para
+            dimensionar el consumo que queda fuera del MPS.
+          </Nota>
+        </Card>
+      )}
+
       <section className="grid grid-cols-1 gap-3">
-        <Nota tono="neutro" titulo="Qué mide cada bloque" icono="▸">
-          El bloque azul sale del contador SDS y es lo que se factura. El bloque ámbar sale de NDD, única fuente que identifica quién
-          imprimió, y sirve para atribuir el gasto a cada área y usuario.
+        <Nota tono="neutro" titulo="Cómo leer este tablero" icono="▸">
+          El contador <strong>SDS es el 100%</strong> y es lo que se factura. NDD no aporta volumen: aporta el patrón de uso que permite
+          repartir ese volumen entre áreas, usuarios y trabajos. B/N y color se reparten por separado, porque casi nunca tienen el mismo
+          factor. Cuando una impresora factura pero NDD no la registró, esas páginas se marcan como <strong>sin auditoría</strong> en vez de
+          repartirse a ciegas.
         </Nota>
       </section>
     </>

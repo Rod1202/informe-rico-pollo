@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts'
 import { Card, Tabla, Badge, Leyenda, TooltipBox, Nota } from './ui.jsx'
 import { C } from '../lib/palette.js'
-import { nddPorArea, nddTrabajos, FUERA_CONTRATO } from '../lib/measures.js'
-import { fInt, fMoney, fTarifa, fPct, fCompact, fSigned, titulo } from '../lib/format.js'
+import { FUERA_CONTRATO } from '../lib/measures.js'
+import { SIN_AUDITORIA, MODO } from '../lib/prorrateo.js'
+import { fInt, fMoney, fTarifa, fPct, fCompact, titulo } from '../lib/format.js'
 
 
 const POR_PAGINA = 8
@@ -14,23 +15,35 @@ const corto = (s, max = 16) => {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t
 }
 
+const esSinAuditoria = (u) => u?.usuario === SIN_AUDITORIA
 
-export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, filtros, brecha = null }) {
-  const [area, setArea] = useState(null)
+
+// Recibe el reparto ya calculado (`areas`) y una funcion para pedir los
+// trabajos de un usuario. El area activa puede manejarse desde afuera pasando
+// `area` + `onArea`; si no, el panel la maneja por su cuenta.
+export default function PanelAreas({
+  areas,
+  trabajosDe,
+  tarifas,
+  area: areaProp = null,
+  onArea = null,
+  mostrarRanking = true,
+  sinAuditoriaTotal = 0
+}) {
+  const controlado = typeof onArea === 'function'
+  const [areaInterna, setAreaInterna] = useState(null)
   const [usuarioSel, setUsuarioSel] = useState(null)
 
-  const areas = useMemo(
-    () => nddPorArea(ndd.porSerieUsuario, catalogoSeries, periodosSel, tarifas, filtros),
-    [ndd.porSerieUsuario, catalogoSeries, periodosSel, tarifas, filtros]
-  )
+  const areaClave = controlado ? areaProp : areaInterna
+  const elegirArea = (a) => (controlado ? onArea(a) : setAreaInterna(a))
 
-  
-  const areaActiva = useMemo(() => areas.find((a) => a.area === area) ?? areas[0] ?? null, [areas, area])
+  const areaActiva = useMemo(() => areas.find((a) => a.area === areaClave) ?? areas[0] ?? null, [areas, areaClave])
 
-  
+  // Cambiar de area invalida el usuario que estaba abierto.
+  useEffect(() => setUsuarioSel(null), [areaActiva?.area])
+
   const [pagina, setPagina] = useState(0)
   const paginas = Math.max(1, Math.ceil(areas.length / POR_PAGINA))
-  
   const pagSegura = Math.min(pagina, paginas - 1)
   const desde = pagSegura * POR_PAGINA
   const paginaAreas = useMemo(
@@ -38,10 +51,7 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
     [areas, desde]
   )
 
-  const usuarios = useMemo(
-    () => (areaActiva?.usuarios ?? []).map((u) => ({ ...u, __key: u.usuario })),
-    [areaActiva]
-  )
+  const usuarios = areaActiva?.usuarios ?? []
 
   const usuarioActivo = useMemo(
     () => usuarios.find((u) => u.usuario === usuarioSel) ?? usuarios[0] ?? null,
@@ -49,26 +59,24 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
   )
 
   const trabajos = useMemo(() => {
-    if (!areaActiva || !usuarioActivo) return []
-    return nddTrabajos(ndd.porTrabajo, catalogoSeries, areaActiva.area, usuarioActivo.usuario, periodosSel, tarifas).map((t) => ({
-      ...t,
-      __key: t.titulo
-    }))
-  }, [ndd.porTrabajo, catalogoSeries, areaActiva, usuarioActivo, periodosSel, tarifas])
+    if (!areaActiva || !usuarioActivo || esSinAuditoria(usuarioActivo)) return []
+    return trabajosDe(areaActiva.area, usuarioActivo.usuario)
+  }, [trabajosDe, areaActiva, usuarioActivo])
 
   const totalAreas = areas.reduce((a, b) => a + b.total, 0)
-  const nombreUsuario = (u) => (u?.nombre && u.nombre !== '-' ? u.nombre : u?.usuario ?? '—')
+  const nombreUsuario = (u) => (esSinAuditoria(u) ? 'Sin auditoria NDD' : u?.nombre && u.nombre !== '-' ? u.nombre : u?.usuario ?? '—')
   const iniciales = (u) => {
+    if (esSinAuditoria(u)) return '?'
     const partes = nombreUsuario(u).split(/[\s._-]+/).filter(Boolean)
     return ((partes[0]?.[0] ?? '') + (partes[1]?.[0] ?? '')).toUpperCase() || '?'
   }
 
   return (
     <>
-    
+    {mostrarRanking && (
     <Card
-      title={`Top áreas por consumo NDD (${areas.length} áreas)`}
-      subtitle="Clic en una barra para filtrar el detalle de usuarios y trabajos"
+      title={`Reparto por area (${areas.length} areas)`}
+      subtitle="Volumen facturado del contador SDS atribuido a cada area. Clic en una barra para abrir su detalle."
       right={
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[10px] text-slate-500 num mr-1 hidden sm:inline">
@@ -103,7 +111,7 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
       }
     >
       {!areas.length ? (
-        <p className="text-xs text-slate-400 py-8 text-center">Sin actividad NDD para los filtros aplicados.</p>
+        <p className="text-xs text-slate-400 py-8 text-center">Sin consumo para los filtros aplicados.</p>
       ) : (
         <>
           <div className="h-[236px]">
@@ -112,13 +120,9 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
                 data={paginaAreas}
                 margin={{ top: 20, right: 8, left: -6, bottom: 4 }}
                 className="cursor-pointer"
-                
                 onClick={(estado) => {
                   const clave = estado?.activePayload?.[0]?.payload?.area
-                  if (clave) {
-                    setArea(clave)
-                    setUsuarioSel(null)
-                  }
+                  if (clave) elegirArea(clave)
                 }}
               >
                 <CartesianGrid stroke={C.grid} vertical={false} />
@@ -135,7 +139,7 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
                   content={<TooltipBox titulo={(l, p) => titulo(p?.[0]?.payload?.area ?? l)} />}
                   cursor={{ fill: 'rgba(0,102,255,0.06)' }}
                 />
-                <Bar dataKey="total" name="Páginas NDD" maxBarSize={72}>
+                <Bar dataKey="total" name="Páginas facturadas" maxBarSize={72}>
                   {paginaAreas.map((a) => (
                     <Cell key={a.area} fill={a.area === areaActiva?.area ? C.blue : C.gray} radius={[4, 4, 0, 0]} />
                   ))}
@@ -157,29 +161,30 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
               ]}
             />
             <span className="text-[10px] text-slate-500 num">
-              Total NDD del periodo: <strong className="text-slate-700">{fInt(totalAreas)}</strong> págs
+              Total facturado del periodo: <strong className="text-slate-700">{fInt(totalAreas)}</strong> págs
             </span>
           </div>
         </>
       )}
     </Card>
+    )}
 
-    
+
     <Card
       title="Consumo por área, usuario y trabajo"
-      subtitle="NDD registra el equipo solo por número de serie; el área se hereda del contador SDS cruzando esa misma serie"
+      subtitle="Reparto del volumen facturado entre los usuarios que NDD identificó en las impresoras de esa área"
       right={areaActiva ? <Badge tone="azul">{titulo(areaActiva.area)}</Badge> : null}
     >
       {!areaActiva ? (
-        <p className="text-xs text-slate-400 py-8 text-center">Sin actividad NDD para los filtros aplicados.</p>
+        <p className="text-xs text-slate-400 py-8 text-center">Sin consumo para los filtros aplicados.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
             {[
-              { l: 'Páginas del área', v: fInt(areaActiva.total), s: `${fPct(totalAreas ? areaActiva.total / totalAreas : 0)} del total NDD` },
+              { l: 'Páginas del área', v: fInt(areaActiva.total), s: `${fPct(totalAreas ? areaActiva.total / totalAreas : 0)} del total facturado` },
               { l: 'Monocromo / color', v: `${fInt(areaActiva.mono)} / ${fInt(areaActiva.color)}`, s: `${fPct(areaActiva.total ? areaActiva.color / areaActiva.total : 0)} en color` },
-              { l: 'Usuarios activos', v: fInt(areaActiva.usuarios.length), s: `${areaActiva.equipos} equipo(s)` },
-              { l: 'Trabajos enviados', v: fInt(areaActiva.jobs), s: `${fInt(areaActiva.jobs ? areaActiva.total / areaActiva.jobs : 0)} págs por trabajo` },
+              { l: 'Usuarios atribuidos', v: fInt(areaActiva.usuarios.filter((u) => !esSinAuditoria(u)).length), s: `${areaActiva.equipos} equipo(s)` },
+              { l: 'Trabajos enviados', v: fInt(areaActiva.jobs), s: areaActiva.jobs ? `${fInt(areaActiva.total / areaActiva.jobs)} págs por trabajo` : 'sin registro NDD' },
               { l: 'Costo de clic', v: fMoney(areaActiva.costo), s: 'tarifas de contrato', destacado: true }
             ].map((k) => (
               <div
@@ -192,6 +197,41 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
               </div>
             ))}
           </div>
+
+          {areaActiva.sinAuditoria > 0 && (
+            <div className="mb-3 flex items-start gap-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <svg className="w-4 h-4 shrink-0 mt-px" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4.5m0 3.5h.01" strokeLinecap="round" />
+              </svg>
+              <div className="min-w-0">
+                <p>
+                  <strong>{fInt(areaActiva.sinAuditoria)} páginas sin auditoría</strong> en esta área. El contador SDS las facturó, pero no
+                  hay base suficiente en NDD para saber quién las imprimió, así que se muestran en una fila propia en vez de repartirse a
+                  ciegas: el total del área sigue cuadrando con la factura.
+                </p>
+                {areaActiva.motivosSinAuditoria.length > 0 && (
+                  <ul className="mt-1 space-y-0.5">
+                    {areaActiva.motivosSinAuditoria.map((s) => (
+                      <li key={`${s.serie}-${s.periodo}`} className="num text-[10px] text-amber-700">
+                        <span className="font-mono font-semibold">{s.serie}</span>
+                        {' · '}
+                        {s.modo === MODO.bajaCobertura ? (
+                          <>
+                            NDD solo cubre {fPct(s.cobertura)} de sus {fInt(s.sdsTotal)} págs (
+                            {fInt(s.nddTotal)} registradas): extrapolarlo multiplicaría por{' '}
+                            {(s.sdsTotal / s.nddTotal).toFixed(1)}x
+                          </>
+                        ) : (
+                          <>NDD no registró ningún trabajo en sus {fInt(s.sdsTotal)} págs facturadas</>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-5">
@@ -210,27 +250,32 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
                     label: 'Usuario',
                     render: (r) => {
                       const sel = r.usuario === usuarioActivo?.usuario
+                      const sinAud = esSinAuditoria(r)
                       return (
                         <span className="flex items-center gap-2 min-w-0">
-                          
                           <span className={`w-1 h-7 rounded-full shrink-0 ${sel ? 'bg-mt-blue' : 'bg-transparent'}`} />
                           <span className="block min-w-0">
                             <span
                               className={`truncate max-w-[160px] inline-block align-bottom ${
-                                sel ? 'font-bold text-mt-blue' : 'font-semibold text-slate-800'
+                                sinAud ? 'font-semibold text-amber-700 italic' : sel ? 'font-bold text-mt-blue' : 'font-semibold text-slate-800'
                               }`}
                             >
                               {nombreUsuario(r)}
                             </span>
-                            {r.nombre !== '-' && r.nombre !== r.usuario && (
-                              <span className="block text-[10px] text-slate-400 truncate max-w-[160px]">{r.usuario}</span>
+                            {sinAud ? (
+                              <span className="block text-[10px] text-amber-600">impresora sin registro NDD</span>
+                            ) : (
+                              r.nombre !== '-' &&
+                              r.nombre !== r.usuario && (
+                                <span className="block text-[10px] text-slate-400 truncate max-w-[160px]">{r.usuario}</span>
+                              )
                             )}
                           </span>
                         </span>
                       )
                     }
                   },
-                  { key: 'jobs', label: 'Trab.', align: 'right', render: (r) => fInt(r.jobs) },
+                  { key: 'jobs', label: 'Trab.', align: 'right', render: (r) => (esSinAuditoria(r) ? '—' : fInt(r.jobs)) },
                   { key: 'mono', label: 'B/N', align: 'right', render: (r) => fInt(r.mono) },
                   { key: 'color', label: 'Color', align: 'right', render: (r) => fInt(r.color) },
                   { key: 'total', label: 'Págs', align: 'right', render: (r) => <strong className="text-slate-900">{fInt(r.total)}</strong> },
@@ -238,7 +283,7 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
                 ]}
                 filas={usuarios}
                 pie={{
-                  nombre: `TOTAL · ${usuarios.length} usuarios`,
+                  nombre: `TOTAL · ${usuarios.length} filas`,
                   jobs: fInt(usuarios.reduce((a, b) => a + b.jobs, 0)),
                   mono: fInt(usuarios.reduce((a, b) => a + b.mono, 0)),
                   color: fInt(usuarios.reduce((a, b) => a + b.color, 0)),
@@ -250,21 +295,44 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
 
             <div className="lg:col-span-7">
               {usuarioActivo ? (
-                <div className="mb-2 rounded-xl border border-mt-blue/25 bg-mt-blueTint px-3 py-2 flex items-center gap-3">
-                  <span className="w-9 h-9 rounded-full bg-gradient-to-tr from-mt-blue to-mt-blueDeep text-white text-[11px] font-bold flex items-center justify-center shrink-0 shadow-sm">
+                <div
+                  className={`mb-2 rounded-xl border px-3 py-2 flex items-center gap-3 ${
+                    esSinAuditoria(usuarioActivo) ? 'border-amber-200 bg-amber-50' : 'border-mt-blue/25 bg-mt-blueTint'
+                  }`}
+                >
+                  <span
+                    className={`w-9 h-9 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 shadow-sm ${
+                      esSinAuditoria(usuarioActivo) ? 'bg-amber-500' : 'bg-gradient-to-tr from-mt-blue to-mt-blueDeep'
+                    }`}
+                  >
                     {iniciales(usuarioActivo)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-mt-blue leading-tight">Viendo los trabajos de</p>
+                    <p
+                      className={`text-[9px] font-bold uppercase tracking-wider leading-tight ${
+                        esSinAuditoria(usuarioActivo) ? 'text-amber-700' : 'text-mt-blue'
+                      }`}
+                    >
+                      {esSinAuditoria(usuarioActivo) ? 'Volumen sin atribuir' : 'Viendo los trabajos de'}
+                    </p>
                     <p className="text-[13px] font-bold text-slate-900 leading-tight truncate">{nombreUsuario(usuarioActivo)}</p>
                     <p className="text-[10px] text-slate-500 leading-tight truncate">
-                      {usuarioActivo.usuario} · {titulo(areaActiva.area)} · {usuarioActivo.equipos} equipo(s)
+                      {esSinAuditoria(usuarioActivo)
+                        ? `${titulo(areaActiva.area)} · ${usuarioActivo.equipos} equipo(s) sin registro NDD`
+                        : `${usuarioActivo.usuario} · ${titulo(areaActiva.area)} · ${usuarioActivo.equipos} equipo(s)`}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-mt-blue num leading-none">{fMoney(usuarioActivo.costo)}</p>
+                    <p
+                      className={`text-sm font-bold num leading-none ${
+                        esSinAuditoria(usuarioActivo) ? 'text-amber-700' : 'text-mt-blue'
+                      }`}
+                    >
+                      {fMoney(usuarioActivo.costo)}
+                    </p>
                     <p className="text-[10px] text-slate-500 num mt-1">
-                      {fInt(usuarioActivo.total)} págs · {fInt(usuarioActivo.jobs)} trabajos
+                      {fInt(usuarioActivo.total)} págs
+                      {esSinAuditoria(usuarioActivo) ? '' : ` · ${fInt(usuarioActivo.jobs)} trabajos`}
                     </p>
                   </div>
                 </div>
@@ -276,7 +344,11 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
               <Tabla
                 maxAltura="420px"
                 initialSort={{ key: 'total', dir: 'desc' }}
-                vacio="Selecciona un usuario para ver el detalle de sus trabajos."
+                vacio={
+                  esSinAuditoria(usuarioActivo)
+                    ? 'Esta impresora no tiene trabajos en NDD: su volumen se factura pero no se puede desglosar.'
+                    : 'Selecciona un usuario para ver el detalle de sus trabajos.'
+                }
                 columnas={[
                   {
                     key: 'titulo',
@@ -310,18 +382,26 @@ export default function PanelAreas({ ndd, catalogoSeries, periodosSel, tarifas, 
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-            <Nota tono="azul" titulo="Cómo se valoriza este consumo" icono="▸">
-              B/N a <strong className="num">{fTarifa(tarifas.bn)}</strong> y color a <strong className="num">{fTarifa(tarifas.color)}</strong> por
-              página. La serie <strong className="font-mono">{tarifas.serieA3}</strong> es la única que factura su color a{' '}
-              <strong className="num">{fTarifa(tarifas.colorA3)}</strong>; su monocromo va a la tarifa B/N normal.
-              {areaActiva.area === FUERA_CONTRATO
-                ? ' Estas series imprimen pero no están en el contrato, por eso no tienen área asignada.'
-                : ''}
+            <Nota tono="azul" titulo="Cómo se reparte este consumo" icono="▸">
+              El <strong>100% es el contador SDS</strong>, que es lo que se factura. NDD solo aporta la proporción en que cada usuario usó
+              esa impresora, y esa proporción se aplica al volumen del contador. B/N y color se reparten por separado. Tarifas:{' '}
+              <strong className="num">{fTarifa(tarifas.bn)}</strong> B/N y <strong className="num">{fTarifa(tarifas.color)}</strong> color;
+              la serie <strong className="font-mono">{tarifas.serieA3}</strong> factura su color a{' '}
+              <strong className="num">{fTarifa(tarifas.colorA3)}</strong>.
+              {areaActiva.area === FUERA_CONTRATO ? ' Estas series imprimen pero no están en el contrato.' : ''}
             </Nota>
-            <Nota tono="aviso" titulo="Es costo de gestión, no la factura" icono="▸">
-              Valorizado sobre las páginas que registra NDD
-              {Number.isFinite(brecha) ? <>, que difieren del contador SDS en <strong className="num">{fSigned(brecha)}</strong> páginas</> : ''}.
-              Sirve para atribuir el gasto a cada área y usuario; el importe que se cobra sale siempre del contador.
+            <Nota tono={sinAuditoriaTotal > 0 ? 'aviso' : 'ok'} titulo="Por qué esto sí cuadra con la factura" icono="▸">
+              Los totales de esta tabla suman exactamente el volumen y el costo del contador, porque el reparto usa mayor residuo y no
+              pierde páginas por redondeo.
+              {sinAuditoriaTotal > 0 ? (
+                <>
+                  {' '}
+                  Las <strong className="num">{fInt(sinAuditoriaTotal)}</strong> páginas de impresoras sin registro NDD quedan
+                  identificadas como <strong>sin auditoría</strong> en lugar de repartirse a ciegas.
+                </>
+              ) : (
+                ' Todas las impresoras facturadas tienen registro NDD en este periodo.'
+              )}
             </Nota>
           </div>
         </>

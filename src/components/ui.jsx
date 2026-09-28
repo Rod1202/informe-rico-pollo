@@ -132,7 +132,9 @@ export function Leyenda({ items, className = '' }) {
   )
 }
 
-export function TooltipBox({ active, payload, label, formato = fInt, titulo }) {
+// `pie` recibe la fila completa del punto, para mostrar datos que no son una
+// serie dibujada (por ejemplo el parque de equipos de ese mes).
+export function TooltipBox({ active, payload, label, formato = fInt, titulo, pie }) {
   if (!active || !payload || !payload.length) return null
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-3 py-2 text-xs">
@@ -144,6 +146,7 @@ export function TooltipBox({ active, payload, label, formato = fInt, titulo }) {
           <span className="font-semibold text-slate-900 num">{formato(p.value)}</span>
         </p>
       ))}
+      {pie && <div className="mt-1.5 pt-1.5 border-t border-slate-100">{pie(payload[0]?.payload)}</div>}
     </div>
   )
 }
@@ -293,6 +296,50 @@ export function Fuente({ tono = 'sds', titulo, descripcion, etiqueta }) {
         <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border shrink-0 ${t.chip}`}>
           {etiqueta}
         </span>
+      )}
+    </div>
+  )
+}
+
+// Quita tildes y mayusculas para que "Rozan" encuentre a "Rozán".
+export const normaliza = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+
+export function Buscador({ valor, onCambio, placeholder = 'Buscar…', ancho = 'w-full sm:w-56' }) {
+  return (
+    <div className={`relative ${ancho} shrink-0`}>
+      <svg
+        className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        viewBox="0 0 24 24"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="M20 20l-3.5-3.5" strokeLinecap="round" />
+      </svg>
+      <input
+        type="search"
+        value={valor}
+        onChange={(e) => onCambio(e.target.value)}
+        placeholder={placeholder}
+        className="w-full pl-8 pr-7 py-1.5 text-[11px] rounded-full border border-slate-200 bg-white text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-mt-blue/50 focus:ring-2 focus:ring-mt-blue/10"
+      />
+      {valor && (
+        <button
+          type="button"
+          onClick={() => onCambio('')}
+          title="Limpiar búsqueda"
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full text-slate-400 hover:text-mt-blue flex items-center justify-center"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.6" viewBox="0 0 24 24">
+            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+          </svg>
+        </button>
       )}
     </div>
   )
