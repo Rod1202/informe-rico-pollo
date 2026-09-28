@@ -118,7 +118,7 @@ export default function Resumen({ ctx }) {
   const tarifasClic = [
     { label: 'Clic B/N', detalle: 'Toda impresión monocroma del parque', tarifa: tarifas.bn, paginas: m.volBN, importe: m.clicBN, color: CAT[0] },
     { label: 'Clic color', detalle: 'Color en los equipos del parque estándar', tarifa: tarifas.color, paginas: m.volColorStd, importe: m.clicColorStd, color: CAT[1] },
-    { label: 'Clic adicional A3', detalle: `Solo color de la serie ${tarifas.serieA3}`, tarifa: tarifas.colorA3, paginas: m.volColorA3, importe: m.clicColorA3, color: CAT[3] }
+    { label: 'Clic adicional A3', detalle: `Solo color de la ${tarifas.nombreA3}`, tarifa: tarifas.colorA3, paginas: m.volColorA3, importe: m.clicColorA3, color: CAT[3] }
   ]
 
   return (
@@ -382,7 +382,7 @@ export default function Resumen({ ctx }) {
           </div>
 
           <Nota tono="aviso" titulo="Regla del clic adicional A3" icono="▸">
-            Solo la <strong className="font-mono">{tarifas.serieA3}</strong> factura el color a{' '}
+            Solo la <strong>{tarifas.nombreA3}</strong> factura el color a{' '}
             <strong className="num">{fTarifa(tarifas.colorA3)}</strong>. Su monocromo se cobra a la tarifa B/N normal, igual que el resto
             del parque.
           </Nota>

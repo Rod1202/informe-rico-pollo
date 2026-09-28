@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
 const DIR_SDS = path.join(ROOT, 'utils', 'sds')
 const DIR_NDD = path.join(ROOT, 'utils', 'ndd')
+const DIR_USUARIOS = path.join(ROOT, 'utils', 'usuarios')
 const OUT = path.join(ROOT, 'src', 'data', 'dataset.json')
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -16,7 +17,10 @@ const TARIFAS = {
   bn: 0.0072,
   color: 0.05886,
   colorA3: 0.19,
-  serieA3: 'BRCST7Q0HB'
+  serieA3: 'BRCST7Q0HB',
+  // Nombre con el que se menciona esa impresora en los textos del informe. La
+  // serie sigue siendo la clave real y se muestra tal cual en auditoria.
+  nombreA3: 'Impresora A3 Marketing'
 }
 
 const log = (...a) => console.log('  ', ...a)
@@ -93,6 +97,41 @@ function parseFechaNDD(s) {
     m: mm,
     d: dd
   }
+}
+
+// Padron de personas: que usuario pertenece a que gerencia (columna Division).
+// Es lo que permite que cada gerencia vea solo su propio consumo.
+function leerGerencias() {
+  if (!fs.existsSync(DIR_USUARIOS)) return { usuarios: {}, gerencias: [], files: [] }
+  const files = listFiles(DIR_USUARIOS, ['.xlsx', '.xlsm', '.xls'])
+  if (!files.length) return { usuarios: {}, gerencias: [], files: [] }
+
+  const usuarios = {}
+  const personas = new Map()
+
+  for (const file of files) {
+    const wb = XLSX.read(fs.readFileSync(file), { cellDates: true })
+    for (const sheetName of wb.SheetNames) {
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: null })
+      if (!raw.length) continue
+      if (pick(raw[0], 'Usuario') === undefined || pick(raw[0], 'Division', 'División') === undefined) continue
+
+      for (const r of raw) {
+        const usuario = txt(pick(r, 'Usuario')).toLowerCase()
+        const division = txt(pick(r, 'Division', 'División'))
+        if (!usuario || !division) continue
+        usuarios[usuario] = division
+        if (!personas.has(division)) personas.set(division, new Set())
+        personas.get(division).add(usuario)
+      }
+    }
+  }
+
+  const gerencias = [...personas.entries()]
+    .map(([nombre, set]) => ({ nombre, clave: norm(nombre), personas: set.size }))
+    .sort((a, b) => b.personas - a.personas)
+
+  return { usuarios, gerencias, files: files.map((f) => path.basename(f)) }
 }
 
 function leerSDS() {
@@ -367,6 +406,11 @@ function leerNDD() {
 
 console.log('\n▸ Generando dataset del Informe Rico Pollo\n')
 
+const gerencias = leerGerencias()
+if (gerencias.files.length) {
+  log(`Padrón · ${gerencias.files.join(', ')} → ${Object.keys(gerencias.usuarios).length} usuarios en ${gerencias.gerencias.length} gerencias`)
+}
+
 const sds = leerSDS()
 log(`SDS · ${sds.files.join(', ')} → ${sds.rows.length} filas de contador`)
 
@@ -445,6 +489,12 @@ const dataset = {
   tarifas: TARIFAS,
   periodos,
   costosModelo,
+  // Padron de gerencias: usuario -> division. Gobierna que ve cada PIN.
+  gerencias: {
+    origen: gerencias.files,
+    usuarios: gerencias.usuarios,
+    lista: gerencias.gerencias
+  },
   catalogoSeries: [...catalogoSDS.values()],
   contador: sds.rows,
   ndd: {
@@ -472,5 +522,10 @@ log(`Equipos (serie): ${seriesSDS.size}  ·  filas contador: ${sds.rows.length}`
 log(`NDD           : ${ndd.stats.trabajos} trabajos · ${ndd.stats.duplicados} duplicados omitidos`)
 log(`Cruce series  : ${cruce.enAmbos} en ambos · ${cruce.soloSDS.length} solo SDS · ${cruce.soloNDD.length} solo NDD`)
 log(`Detalle NDD   : ${ndd.porSerieUsuario.length} combos usuario×equipo · ${ndd.porTrabajo.length} filas de trabajos`)
+if (gerencias.gerencias.length) {
+  const conNDD = new Set(ndd.porSerieUsuario.map((r) => String(r.usuario).toLowerCase()))
+  const cruzan = Object.keys(gerencias.usuarios).filter((u) => conNDD.has(u)).length
+  log(`Gerencias     : ${gerencias.gerencias.length} · ${cruzan} de ${Object.keys(gerencias.usuarios).length} usuarios del padrón imprimen`)
+}
 log(`Salida        : ${path.relative(ROOT, OUT)} (${(fs.statSync(OUT).size / 1024).toFixed(0)} KB)`)
 console.log('\n✓ dataset.json generado\n')

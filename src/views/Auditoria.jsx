@@ -10,7 +10,7 @@ import { fInt, fMoney, fTarifa, fPct, fCompact, fFecha, fSigned, titulo } from '
 export default function Auditoria({ ctx }) {
   const {
     m, auditoria, ndd, periodos, periodosSel, periodosInfo, meta, mensual, tarifas,
-    atribucion, areasAtribuidas, sinAuditoria
+    atribucion, areasAtribuidas
   } = ctx
 
   const trabajosDe = useCallback(
@@ -265,7 +265,6 @@ export default function Auditoria({ ctx }) {
         areas={areasAtribuidas}
         trabajosDe={trabajosDe}
         tarifas={tarifas}
-        sinAuditoriaTotal={sinAuditoria}
       />
 
       

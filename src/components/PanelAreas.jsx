@@ -27,8 +27,7 @@ export default function PanelAreas({
   tarifas,
   area: areaProp = null,
   onArea = null,
-  mostrarRanking = true,
-  sinAuditoriaTotal = 0
+  mostrarRanking = true
 }) {
   const controlado = typeof onArea === 'function'
   const [areaInterna, setAreaInterna] = useState(null)
@@ -381,27 +380,14 @@ export default function PanelAreas({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+          <div className="grid grid-cols-1 gap-3 mt-3">
             <Nota tono="azul" titulo="Cómo se reparte este consumo" icono="▸">
               El <strong>100% es el contador SDS</strong>, que es lo que se factura. NDD solo aporta la proporción en que cada usuario usó
               esa impresora, y esa proporción se aplica al volumen del contador. B/N y color se reparten por separado. Tarifas:{' '}
               <strong className="num">{fTarifa(tarifas.bn)}</strong> B/N y <strong className="num">{fTarifa(tarifas.color)}</strong> color;
-              la serie <strong className="font-mono">{tarifas.serieA3}</strong> factura su color a{' '}
+              la <strong>{tarifas.nombreA3}</strong> factura su color a{' '}
               <strong className="num">{fTarifa(tarifas.colorA3)}</strong>.
               {areaActiva.area === FUERA_CONTRATO ? ' Estas series imprimen pero no están en el contrato.' : ''}
-            </Nota>
-            <Nota tono={sinAuditoriaTotal > 0 ? 'aviso' : 'ok'} titulo="Por qué esto sí cuadra con la factura" icono="▸">
-              Los totales de esta tabla suman exactamente el volumen y el costo del contador, porque el reparto usa mayor residuo y no
-              pierde páginas por redondeo.
-              {sinAuditoriaTotal > 0 ? (
-                <>
-                  {' '}
-                  Las <strong className="num">{fInt(sinAuditoriaTotal)}</strong> páginas de impresoras sin registro NDD quedan
-                  identificadas como <strong>sin auditoría</strong> en lugar de repartirse a ciegas.
-                </>
-              ) : (
-                ' Todas las impresoras facturadas tienen registro NDD en este periodo.'
-              )}
             </Nota>
           </div>
         </>

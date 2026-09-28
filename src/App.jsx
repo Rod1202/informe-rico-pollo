@@ -10,6 +10,7 @@ import Auditoria from './views/Auditoria.jsx'
 import Kpi from './views/Kpi.jsx'
 import { filtrar, medidas, serieMensual, auditoriaNDD, ytd } from './lib/measures.js'
 import { prorratear, agruparPorArea, agruparPorUsuario } from './lib/prorrateo.js'
+import { usuariosDeGerencia, acotarAtribucion, medidasAtribuidas, serieMensualAtribuida } from './lib/gerencia.js'
 import { ROLES, verificarPin, configurado, CLAVE_SESION } from './lib/acceso.js'
 import { fFecha } from './lib/format.js'
 
@@ -115,9 +116,70 @@ export default function App() {
     }
   }, [filtros, contador, periodos, tarifas, ndd.porSerie, ndd.porSerieUsuario, catalogoSeries, ultimo])
 
+  // Si el PIN es de una gerencia, todo el tablero se recalcula sobre el
+  // consumo de sus usuarios: no ve el volumen de las demas ni el que quedo sin
+  // auditoria. El cargo fijo no entra porque es del equipo, no de la persona.
+  const acotado = useMemo(() => {
+    if (!rol?.gerencia) return null
+
+    const cat = new Map(catalogoSeries.map((c) => [c.serie, c]))
+    const suyos = usuariosDeGerencia(dataset.gerencias?.usuarios, rol.gerencia)
+    const periodosTodos = periodos.map((p) => p.key)
+
+    const todo = acotarAtribucion(
+      prorratear({
+        contador,
+        porSerieUsuario: ndd.porSerieUsuario,
+        catalogoSeries,
+        periodosSel: periodosTodos,
+        tarifas,
+        filtros: { ...filtros, periodo: 'TODOS' },
+        periodos
+      }),
+      suyos
+    )
+
+    const enPeriodos = (claves) => todo.asignado.filter((a) => claves.includes(a.periodo))
+    const periodosSel = filtros.periodo === 'TODOS' ? periodosTodos : [filtros.periodo]
+    const i = periodos.findIndex((p) => p.key === filtros.periodo)
+    const previo = filtros.periodo !== 'TODOS' && i > 0 ? periodos[i - 1] : null
+
+    const asignadoActual = enPeriodos(periodosSel)
+    const asignadoPrevio = previo ? enPeriodos([previo.key]) : []
+    const atribucion = { ...todo, asignado: asignadoActual }
+
+    const mensual = serieMensualAtribuida(todo.asignado, periodos, tarifas, cat)
+
+    return {
+      m: medidasAtribuidas(asignadoActual, tarifas, cat),
+      mensual,
+      actual: mensual.serie.find((s) => s.periodo === filtros.periodo) ?? null,
+      atribucion,
+      areasAtribuidas: agruparPorArea(atribucion, tarifas),
+      usuariosAtribuidos: agruparPorUsuario(atribucion, tarifas),
+      sinAuditoria: 0,
+      alcance: {
+        tipo: 'gerencia',
+        gerencia: rol.gerencia,
+        etiqueta: rol.etiqueta,
+        personas: suyos.size,
+        asignadoActual,
+        asignadoPrevio,
+        asignadoTodo: todo.asignado,
+        mPrev: medidasAtribuidas(asignadoPrevio, tarifas, cat),
+        usuariosPrev: agruparPorUsuario({ ...todo, asignado: asignadoPrevio }, tarifas)
+      }
+    }
+  }, [rol, dataset.gerencias, catalogoSeries, contador, ndd.porSerieUsuario, periodos, tarifas, filtros])
+
   if (!rol) return <Login onAcceso={entrar} verificar={verificarPin} configurado={configurado} />
 
-  const ctx = { dataset, meta, periodos, tarifas, contador, costosModelo, ndd, catalogoSeries, filtros, setFiltros, rol, ...modelo }
+  const ctx = {
+    dataset, meta, periodos, tarifas, contador, costosModelo, ndd, catalogoSeries, filtros, setFiltros, rol,
+    alcance: { tipo: 'general' },
+    ...modelo,
+    ...(acotado ?? {})
+  }
 
   return (
     <div className="h-full flex overflow-hidden">

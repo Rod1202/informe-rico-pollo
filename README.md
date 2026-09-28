@@ -134,6 +134,56 @@ totales por área, usuario y trabajo tienen que seguir sumando exactamente el co
 
 ---
 
+## Accesos por gerencia
+
+Además del PIN general y el de Gerencia, cada gerencia tiene su propio PIN de 4
+dígitos. Con él solo ve el **Tablero KPI · Gerencia**, y dentro de él solo el consumo de
+las personas que le asigna el padrón.
+
+**El padrón** es `utils/usuarios/USUARIOS_GERENCIAS.xlsx`. `npm run data` lo lee y lleva
+al dataset el mapa `Usuario → Division`. La columna que manda es **`Division`**; el
+cruce contra NDD es por **`Usuario`**, ignorando tildes y mayúsculas.
+
+| Gerencia (columna `Division`) | Variable en `.env` | PIN |
+|---|---|---|
+| GERENCIA CORP. COMERCIAL | `VITE_PIN_GER_COMERCIAL` | 1201 |
+| GERENCIA CORP. FINANZAS | `VITE_PIN_GER_FINANZAS` | 1202 |
+| GERENCIA CORP. GESTIÓN HUMANA | `VITE_PIN_GER_GESTION_HUMANA` | 1203 |
+| GERENCIA CORP. MARKETING | `VITE_PIN_GER_MARKETING` | 1204 |
+| GERENCIA CORP. TECNOLOG. DE LA INFORMACIÓN | `VITE_PIN_GER_TI` | 1205 |
+| GERENCIA DE ASEGURAMIENTO DE LA CALIDAD | `VITE_PIN_GER_CALIDAD` | 1206 |
+| GERENCIA DE DIVISIÓN LOGÍSTICA | `VITE_PIN_GER_LOGISTICA` | 1207 |
+| GERENCIA DE PLANTA AB | `VITE_PIN_GER_PLANTA_AB` | 1208 |
+| GERENCIA GENERAL | `VITE_PIN_GER_GENERAL` | 1209 |
+| GERENCIA NEG. RETAIL | `VITE_PIN_GER_RETAIL` | 1210 |
+| GERENCIA PRODUCCIÓN AVÍCOLA | `VITE_PIN_GER_AVICOLA` | 1211 |
+| GERENCIA PRODUCCIÓN PORCINA | `VITE_PIN_GER_PORCINA` | 1212 |
+| NEGOCIOS AGROINDUSTRIALES | `VITE_PIN_GER_AGROINDUSTRIALES` | 1213 |
+| OFICINA EJECUTIVA | `VITE_PIN_GER_OFICINA_EJECUTIVA` | 1214 |
+| LEGAL | `VITE_PIN_GER_LEGAL` | 1215 |
+| GERENCIA DE DIVISIÓN DE CAPACIDADES INDUSTRIALES | `VITE_PIN_GER_CAPACIDADES` | 1216 |
+
+Qué cambia con un PIN de gerencia (`src/lib/gerencia.js`):
+
+- Las medidas, los rankings, el histórico y el detalle se recalculan **sobre el reparto
+  de sus usuarios**, no sobre el contador completo.
+- **No hay cargo fijo**: es del equipo, no de la persona, y no se puede repartir por
+  usuario. El KPI principal pasa a ser el clic variable, y la tarjeta de cargo fijo se
+  reemplaza por los equipos en los que esa gerencia imprimió.
+- **No ve el volumen sin auditoría** ni el de las impresoras fuera de contrato.
+- Los filtros del encabezado (sede, área, estado) acotan dentro de su alcance; nunca
+  pueden mostrar usuarios de otra gerencia.
+
+> Los PINs viajan al bundle del navegador, igual que los dos originales. Sirven para
+> separar vistas entre personas de la empresa, no como secreto frente a alguien que
+> inspeccione el sitio.
+
+**Cobertura actual (ago-2026):** las 16 gerencias suman 89 280 de las 114 975 págs
+repartidas (77.7%). El resto son las 24 140 págs sin auditoría y ~1 555 de cuentas que
+imprimen pero no están en el padrón (equipos, cuentas de servicio).
+
+---
+
 ## Vistas
 
 1. **Tablero KPI · Gerencia** — en este orden: evolución histórica (con pestaña

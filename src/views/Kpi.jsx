@@ -7,6 +7,7 @@ import TopRanking, { armarTop } from '../components/TopRanking.jsx'
 import { C, CAT } from '../lib/palette.js'
 import { filtrar, medidas, comparar, periodoPrevio, serieMensual } from '../lib/measures.js'
 import { prorratear, agruparPorUsuario, trabajosProrrateados, SIN_AUDITORIA } from '../lib/prorrateo.js'
+import { compararAtribuido, serieMensualAtribuida } from '../lib/gerencia.js'
 import { fInt, fMoney, fTarifa, fPct, fDelta, fCompact, titulo } from '../lib/format.js'
 
 const IC = {
@@ -61,8 +62,12 @@ const nombreUsuario = (u) =>
 export default function Kpi({ ctx }) {
   const {
     m, mensual, actual, esAcumulado, contador, tarifas, periodos, filtros, rowsTodoPeriodo,
-    ndd, catalogoSeries, periodosSel, atribucion, areasAtribuidas, usuariosAtribuidos, sinAuditoria
+    ndd, catalogoSeries, periodosSel, atribucion, areasAtribuidas, usuariosAtribuidos, alcance
   } = ctx
+
+  // Con un PIN de gerencia el tablero ya viene acotado a sus usuarios: las
+  // medidas y los rankings salen del reparto, no del contador completo.
+  const esGerencia = alcance?.tipo === 'gerencia'
 
 
   const previo = useMemo(() => periodoPrevio(periodos, filtros.periodo), [periodos, filtros.periodo])
@@ -71,9 +76,12 @@ export default function Kpi({ ctx }) {
     () => (previo ? filtrar(contador, { ...filtros, periodo: previo.key }) : []),
     [contador, filtros, previo]
   )
-  const mPrev = useMemo(() => medidas(rowsPrevio, tarifas), [rowsPrevio, tarifas])
+  const mPrev = useMemo(
+    () => (esGerencia ? alcance.mPrev : medidas(rowsPrevio, tarifas)),
+    [esGerencia, alcance, rowsPrevio, tarifas]
+  )
 
-  const sinBase = !previo || rowsPrevio.length === 0
+  const sinBase = esGerencia ? !previo || alcance.asignadoPrevio.length === 0 : !previo || rowsPrevio.length === 0
   const pct = (a, b) => (sinBase || !b ? null : (a - b) / b)
 
   const etiqueta = esAcumulado ? 'el acumulado' : (actual?.label ?? '')
@@ -98,7 +106,7 @@ export default function Kpi({ ctx }) {
     },
     {
       tipo: 'Color A3 adicional',
-      detalle: `${fTarifa(tarifas.colorA3)} · solo ${tarifas.serieA3}`,
+      detalle: `${fTarifa(tarifas.colorA3)} · solo ${tarifas.nombreA3}`,
       icono: IC.color,
       pags: m.volColorA3, costo: m.clicColorA3, pagsPrev: mPrev.volColorA3, costoPrev: mPrev.clicColorA3,
       color: CAT[3]
@@ -115,12 +123,20 @@ export default function Kpi({ ctx }) {
   // Ranking SDS por dimension, y el de areas que manda el resto de la vista.
   const [dimension, setDimension] = useState('area')
   const dimActiva = DIMENSIONES.find((d) => d.id === dimension) ?? DIMENSIONES[0]
-  const rankingDim = useMemo(() => {
-    const r = comparar(rowsActual, rowsPrevio, dimension, tarifas)
-    return dimension === 'serie' ? r.filter((x) => x.volumetria > 0 || x.volPrev > 0) : r
-  }, [rowsActual, rowsPrevio, dimension, tarifas])
-  const rankingAreas = useMemo(() => comparar(rowsActual, rowsPrevio, 'area', tarifas), [rowsActual, rowsPrevio, tarifas])
   const catSerie = useMemo(() => new Map(catalogoSeries.map((c) => [c.serie, c])), [catalogoSeries])
+  const rankingDim = useMemo(() => {
+    const r = esGerencia
+      ? compararAtribuido(alcance.asignadoActual, alcance.asignadoPrevio, dimension, tarifas, catSerie)
+      : comparar(rowsActual, rowsPrevio, dimension, tarifas)
+    return dimension === 'serie' ? r.filter((x) => x.volumetria > 0 || x.volPrev > 0) : r
+  }, [esGerencia, alcance, rowsActual, rowsPrevio, dimension, tarifas, catSerie])
+  const rankingAreas = useMemo(
+    () =>
+      esGerencia
+        ? compararAtribuido(alcance.asignadoActual, alcance.asignadoPrevio, 'area', tarifas, catSerie)
+        : comparar(rowsActual, rowsPrevio, 'area', tarifas),
+    [esGerencia, alcance, rowsActual, rowsPrevio, tarifas, catSerie]
+  )
 
 
   // Area seleccionada: la eligen tanto el top 5 como el grafico de ranking, y
@@ -131,6 +147,7 @@ export default function Kpi({ ctx }) {
 
   // Reparto del periodo anterior, necesario para la variacion del top de usuarios.
   const usuariosPrev = useMemo(() => {
+    if (esGerencia) return alcance.usuariosPrev
     if (!previo) return []
     const res = prorratear({
       contador,
@@ -142,7 +159,7 @@ export default function Kpi({ ctx }) {
       periodos
     })
     return agruparPorUsuario(res, tarifas)
-  }, [previo, contador, ndd.porSerieUsuario, catalogoSeries, tarifas, filtros])
+  }, [esGerencia, alcance, previo, contador, ndd.porSerieUsuario, catalogoSeries, tarifas, filtros])
 
   const mapaUsuariosPrev = useMemo(() => new Map(usuariosPrev.map((u) => [u.usuario, u])), [usuariosPrev])
 
@@ -209,26 +226,37 @@ export default function Kpi({ ctx }) {
   // Serie mensual de lo que muestre el ranking: el area elegida, o el
   // consolidado mientras no haya ninguna.
   const mensualArea = useMemo(() => {
+    if (esGerencia) {
+      if (!areaSel) return mensual
+      const suyas = new Set([...catSerie.values()].filter((c) => c.area === areaSel).map((c) => c.serie))
+      return serieMensualAtribuida(
+        alcance.asignadoTodo.filter((a) => suyas.has(a.serie)),
+        periodos,
+        tarifas,
+        catSerie
+      )
+    }
     const rows = areaSel ? rowsTodoPeriodo.filter((r) => r.area === areaSel) : rowsTodoPeriodo
     return serieMensual(rows, periodos, tarifas)
-  }, [areaSel, rowsTodoPeriodo, periodos, tarifas])
+  }, [esGerencia, alcance, areaSel, mensual, catSerie, rowsTodoPeriodo, periodos, tarifas])
 
   const trabajosDe = useCallback(
     (area, usuario) => trabajosProrrateados(atribucion, ndd.porTrabajo, area, usuario, periodosSel, tarifas),
     [atribucion, ndd.porTrabajo, periodosSel, tarifas]
   )
 
-  const fueraContrato = atribucion.fueraContrato
-  const totalFuera = fueraContrato.reduce((a, b) => a + b.total, 0)
-
   return (
     <>
 
       <Fuente
         tono="sds"
-        titulo="Facturación · contador SDS"
-        descripcion="Volumetría y costos que se cobran en el contrato. Todo este tablero toma el contador SDS como el 100%."
-        etiqueta="Fuente SDS"
+        titulo={esGerencia ? `Consumo de ${alcance.etiqueta.replace('Gerencia · ', '')}` : 'Facturación · contador SDS'}
+        descripcion={
+          esGerencia
+            ? `Volumen facturado que corresponde a las ${alcance.personas} personas del padrón de esta gerencia. No incluye el consumo de otras gerencias ni el cargo fijo de los equipos, que es del parque y no de las personas.`
+            : 'Volumetría y costos que se cobran en el contrato. Todo este tablero toma el contador SDS como el 100%.'
+        }
+        etiqueta={esGerencia ? 'Alcance acotado' : 'Fuente SDS'}
       />
 
       {/* 1 · Evolución histórica, con pestaña volumetría / facturación. */}
@@ -239,11 +267,11 @@ export default function Kpi({ ctx }) {
         <Tile
           destacado
           icon={<Icono d={IC.dinero} />}
-          label={`Costo total ${esAcumulado ? 'acumulado' : (actual?.label ?? '')}`}
+          label={`${esGerencia ? 'Costo de clic' : 'Costo total'} ${esAcumulado ? 'acumulado' : (actual?.label ?? '')}`}
           value={fMoney(m.facturacion)}
           foot={
             sinBase ? (
-              <span className="text-[10px] text-white/80 font-medium">clic + cargo fijo</span>
+              <span className="text-[10px] text-white/80 font-medium">{esGerencia ? 'solo clic variable' : 'clic + cargo fijo'}</span>
             ) : (
               <Delta value={pct(m.facturacion, mPrev.facturacion)} suffix={`vs ${etiquetaPrev}`} />
             )
@@ -261,12 +289,21 @@ export default function Kpi({ ctx }) {
           value={fMoney(m.clicColor)}
           foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)} del clic</span>}
         />
-        <Tile
-          icon={<Icono d={IC.escudo} />}
-          label="Cargo fijo"
-          value={fMoney(m.cargoFijo)}
-          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.pctCargoFijo)} de la factura</span>}
-        />
+        {esGerencia ? (
+          <Tile
+            icon={<Icono d={IC.escudo} />}
+            label="Equipos usados"
+            value={fInt(m.equiposActivos)}
+            foot={<span className="text-[10px] text-slate-400 font-medium">impresoras donde imprimió</span>}
+          />
+        ) : (
+          <Tile
+            icon={<Icono d={IC.escudo} />}
+            label="Cargo fijo"
+            value={fMoney(m.cargoFijo)}
+            foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.pctCargoFijo)} de la factura</span>}
+          />
+        )}
         <Tile
           icon={<Icono d={IC.hoja} />}
           label="Volumetría"
@@ -332,7 +369,7 @@ export default function Kpi({ ctx }) {
       <Nota tono="aviso" titulo="Peso real del color" icono="▸">
         El color es el <strong className="num">{fPct(m.pctVolColor)}</strong> del volumen pero el{' '}
         <strong className="num">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)}</strong> del clic. La serie{' '}
-        <strong className="font-mono">{tarifas.serieA3}</strong> concentra <strong className="num">{fMoney(m.clicColorA3)}</strong> con solo{' '}
+        <strong>{tarifas.nombreA3}</strong> concentra <strong className="num">{fMoney(m.clicColorA3)}</strong> con solo{' '}
         {fInt(m.volColorA3)} páginas por la tarifa A3 de {fTarifa(tarifas.colorA3)}.
       </Nota>
 
@@ -590,11 +627,23 @@ export default function Kpi({ ctx }) {
             costo: fMoney(usuariosTabla.reduce((a, b) => a + b.costo, 0))
           }}
         />
-        <Nota tono="ok" titulo="Este total sí es la factura" icono="▸">
+        <Nota tono={esGerencia ? 'azul' : 'ok'} titulo={esGerencia ? 'Alcance de este total' : 'Este total sí es la factura'} icono="▸">
+          {esGerencia ? (
+            <>
+              Son <strong className="num">{fInt(totalBase)}</strong> páginas atribuidas a las personas de{' '}
+              <strong>{alcance.etiqueta.replace('Gerencia · ', '')}</strong>
+              {areaElegida ? ` en ${titulo(areaElegida.area)}` : ''}, sobre el volumen que factura el contador SDS. Es una parte de la
+              factura total del contrato, no la factura completa: el resto corresponde a otras gerencias, a impresoras sin registro NDD y
+              al cargo fijo del parque.
+            </>
+          ) : (
+            <>
           El reparto suma <strong className="num">{fInt(totalBase)}</strong> páginas
           {areaElegida ? ` en ${titulo(areaElegida.area)}` : ''}, exactamente el volumen del contador SDS
           {areaElegida ? '' : <> de {etiqueta} (<strong className="num">{fInt(m.volumetria)}</strong> págs)</>}. NDD ya no aporta el
-          número: aporta solo la proporción con la que se reparte.
+              número: aporta solo la proporción con la que se reparte.
+            </>
+          )}
         </Nota>
       </Card>
 
@@ -606,64 +655,7 @@ export default function Kpi({ ctx }) {
         area={areaSel}
         onArea={alternarArea}
         mostrarRanking={false}
-        sinAuditoriaTotal={sinAuditoria}
       />
-
-      {/* 8 · Lo que NDD ve fuera del contrato: no se factura, va aparte. */}
-      {fueraContrato.length > 0 && (
-        <Card
-          title="Impresoras fuera del contrato"
-          subtitle="NDD registra actividad en estas series, pero no están en el contador SDS: no se facturan y no entran en ningún reparto"
-          right={<Badge tone="aviso">{fueraContrato.length} series · no facturable</Badge>}
-        >
-          <Tabla
-            maxAltura="280px"
-            initialSort={{ key: 'total', dir: 'desc' }}
-            columnas={[
-              { key: 'serie', label: 'Serie', render: (r) => <span className="font-mono text-[11px] font-semibold text-slate-800">{r.serie}</span> },
-              {
-                key: 'usuarios',
-                label: 'Usuarios',
-                sortValue: (r) => r.usuarios.length,
-                render: (r) => (
-                  <span className="text-slate-500 truncate max-w-[260px] inline-block align-bottom">
-                    {r.usuarios.slice(0, 3).map((u) => (u.nombre && u.nombre !== '-' ? u.nombre : u.usuario)).join(' · ')}
-                    {r.usuarios.length > 3 ? ` +${r.usuarios.length - 3}` : ''}
-                  </span>
-                )
-              },
-              { key: 'jobs', label: 'Trabajos', align: 'right', render: (r) => fInt(r.jobs) },
-              { key: 'mono', label: 'B/N', align: 'right', render: (r) => fInt(r.mono) },
-              { key: 'color', label: 'Color', align: 'right', render: (r) => fInt(r.color) },
-              { key: 'total', label: 'Págs NDD', align: 'right', render: (r) => <strong className="text-slate-900">{fInt(r.total)}</strong> },
-              { key: 'costo', label: 'Costo referencial', align: 'right', render: (r) => <span className="text-slate-500">{fMoney(r.costo)}</span> }
-            ]}
-            filas={fueraContrato}
-            pie={{
-              serie: `TOTAL · ${fueraContrato.length} series`,
-              jobs: fInt(fueraContrato.reduce((a, b) => a + b.jobs, 0)),
-              mono: fInt(fueraContrato.reduce((a, b) => a + b.mono, 0)),
-              color: fInt(fueraContrato.reduce((a, b) => a + b.color, 0)),
-              total: fInt(totalFuera),
-              costo: fMoney(fueraContrato.reduce((a, b) => a + b.costo, 0))
-            }}
-          />
-          <Nota tono="aviso" titulo="Por qué están fuera del reparto" icono="▸">
-            Estas <strong className="num">{fInt(totalFuera)}</strong> páginas no tienen contador SDS contra el cual prorratearse, así que no
-            forman parte de la factura ni del ranking de áreas. El costo mostrado es solo referencial, valorizado a tarifa de contrato para
-            dimensionar el consumo que queda fuera del MPS.
-          </Nota>
-        </Card>
-      )}
-
-      <section className="grid grid-cols-1 gap-3">
-        <Nota tono="neutro" titulo="Cómo leer este tablero" icono="▸">
-          El contador <strong>SDS es el 100%</strong> y es lo que se factura. NDD no aporta volumen: aporta el patrón de uso que permite
-          repartir ese volumen entre áreas, usuarios y trabajos. B/N y color se reparten por separado, porque casi nunca tienen el mismo
-          factor. Cuando una impresora factura pero NDD no la registró, esas páginas se marcan como <strong>sin auditoría</strong> en vez de
-          repartirse a ciegas.
-        </Nota>
-      </section>
     </>
   )
 }

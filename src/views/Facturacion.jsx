@@ -106,7 +106,7 @@ export default function Facturacion({ ctx }) {
               ))}
             </div>
             <Nota tono="azul" titulo="Regla A3" icono="▸">
-              La serie <strong className="font-mono">{tarifas.serieA3}</strong> factura el clic color a{' '}
+              La <strong>{tarifas.nombreA3}</strong> factura el clic color a{' '}
               <strong className="num">${tarifas.colorA3.toFixed(2)}</strong> (adicional A3). El resto del parque va a{' '}
               <strong className="num">${tarifas.color.toFixed(5)}</strong>. Validado contra el importe de origen:{' '}
               <strong className="num">{fMoney(m.difClicOrigen)}</strong> de diferencia.
