@@ -13,6 +13,19 @@ const OUT = path.join(ROOT, 'src', 'data', 'dataset.json')
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 const MESES_LARGOS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
+// El contador y el padron escriben algunas gerencias distinto ("GERENCIA
+// ASEGURAMIENTO" vs "GERENCIA DE ASEGURAMIENTO"). Se unifican al nombre del
+// padron, que es el que usan los PIN de acceso.
+const GERENCIAS_EQUIV = new Map([
+  ['gerencia aseguramiento de la calidad', 'GERENCIA DE ASEGURAMIENTO DE LA CALIDAD']
+])
+
+const unificarGerencia = (g) => {
+  const v = txt(g)
+  if (!v) return 'SIN GERENCIA'
+  return GERENCIAS_EQUIV.get(norm(v)) ?? v
+}
+
 const TARIFAS = {
   bn: 0.0072,
   color: 0.05886,
@@ -118,9 +131,16 @@ function leerGerencias() {
 
       for (const r of raw) {
         const usuario = txt(pick(r, 'Usuario')).toLowerCase()
-        const division = txt(pick(r, 'Division', 'División'))
-        if (!usuario || !division) continue
-        usuarios[usuario] = division
+        const division = unificarGerencia(pick(r, 'Division', 'División'))
+        if (!usuario || !division || division === 'SIN GERENCIA') continue
+        // Se guarda la jerarquia de la persona, no la del equipo: gerencia,
+        // area y departamento salen del padron.
+        usuarios[usuario] = {
+          g: division,
+          a: txt(pick(r, 'Area', 'Área')) || 'SIN ÁREA',
+          d: txt(pick(r, 'Dpto', 'Depto', 'Departamento')) || 'SIN DEPARTAMENTO',
+          n: txt(pick(r, 'Nombres')) || usuario
+        }
         if (!personas.has(division)) personas.set(division, new Set())
         personas.get(division).add(usuario)
       }
@@ -161,7 +181,9 @@ function leerSDS() {
           periodo: per.key,
           periodoLabel: per.label,
           sede: txt(pick(r, 'Sede')) || 'SIN SEDE',
+          gerencia: unificarGerencia(pick(r, 'Gerencia')),
           area: txt(pick(r, 'Área', 'Area')) || 'SIN ÁREA',
+          ubicacion: txt(pick(r, 'Ubicación', 'Ubicacion')) || txt(pick(r, 'Área', 'Area')) || 'SIN UBICACIÓN',
           modelo: txt(pick(r, 'Nombre del equipo')).replace(/\s+/g, ' '),
           serie,
           estado: (txt(pick(r, 'Estado')) || 'PRODUCCION').toUpperCase(),
@@ -457,7 +479,7 @@ const costosModelo = [...sds.rows.reduce((m, r) => {
 const seriesSDS = new Set(sds.rows.map((r) => r.serie))
 const seriesNDD = new Set(ndd.porSerie.map((r) => r.serie).filter((s) => s && s !== '-'))
 const catalogoSDS = new Map()
-for (const r of sds.rows) if (!catalogoSDS.has(r.serie)) catalogoSDS.set(r.serie, { serie: r.serie, sede: r.sede, area: r.area, modelo: r.modelo, estado: r.estado })
+for (const r of sds.rows) if (!catalogoSDS.has(r.serie)) catalogoSDS.set(r.serie, { serie: r.serie, sede: r.sede, gerencia: r.gerencia, area: r.area, ubicacion: r.ubicacion, modelo: r.modelo, estado: r.estado })
 const catalogoNDD = new Map()
 for (const r of ndd.porSerie) if (!catalogoNDD.has(r.serie)) catalogoNDD.set(r.serie, { serie: r.serie, impresora: r.impresora, modelo: r.modelo })
 
@@ -483,7 +505,9 @@ const dataset = {
     filasContador: sds.rows.length,
     equipos: seriesSDS.size,
     sedes: [...new Set(sds.rows.map((r) => r.sede))].sort(),
+    gerenciasSDS: [...new Set(sds.rows.map((r) => r.gerencia))].sort(),
     areas: [...new Set(sds.rows.map((r) => r.area))].sort(),
+    ubicaciones: [...new Set(sds.rows.map((r) => r.ubicacion))].sort(),
     modelos: [...new Set(sds.rows.map((r) => r.modelo))].sort()
   },
   tarifas: TARIFAS,

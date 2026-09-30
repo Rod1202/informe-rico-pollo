@@ -95,6 +95,18 @@ export default function App() {
     const usuariosAtribuidos = agruparPorUsuario(atribucion, tarifas)
     const sinAuditoria = areasAtribuidas.reduce((a, b) => a + b.sinAuditoria, 0)
 
+    // Mismo reparto pero sobre todos los periodos: lo necesita el evolutivo,
+    // que dibuja la historia completa aunque el filtro sea de un solo mes.
+    const repartoHistorico = prorratear({
+      contador,
+      porSerieUsuario: ndd.porSerieUsuario,
+      catalogoSeries,
+      periodosSel: periodos.map((p) => p.key),
+      tarifas,
+      filtros: { ...filtros, periodo: 'TODOS' },
+      periodos
+    })
+
     return {
       periodosSel,
       periodosInfo,
@@ -110,6 +122,7 @@ export default function App() {
       areasAtribuidas,
       usuariosAtribuidos,
       sinAuditoria,
+      repartoHistorico,
       ytd: acum,
       nddParcial,
       esAcumulado: filtros.periodo === 'TODOS'
@@ -178,7 +191,11 @@ export default function App() {
     dataset, meta, periodos, tarifas, contador, costosModelo, ndd, catalogoSeries, filtros, setFiltros, rol,
     alcance: { tipo: 'general' },
     ...modelo,
-    ...(acotado ?? {})
+    ...(acotado ?? {}),
+    // El reparto completo se conserva aparte: el grafico de gerencias compara
+    // toda la empresa aunque el resto del tablero este acotado.
+    atribucionCompleta: modelo.atribucion,
+    repartoHistorico: modelo.repartoHistorico
   }
 
   return (

@@ -141,8 +141,23 @@ dígitos. Con él solo ve el **Tablero KPI · Gerencia**, y dentro de él solo e
 las personas que le asigna el padrón.
 
 **El padrón** es `utils/usuarios/USUARIOS_GERENCIAS.xlsx`. `npm run data` lo lee y lleva
-al dataset el mapa `Usuario → Division`. La columna que manda es **`Division`**; el
-cruce contra NDD es por **`Usuario`**, ignorando tildes y mayúsculas.
+al dataset, por persona, su `Division` (gerencia), `Area`, `Dpto` y nombre. El cruce
+contra NDD es **`Usuario`** (columna C) contra **`Logon_Nombre`** del export NDD.
+
+Ese cruce es el eje de todo el tablero de Gerencia: **la gerencia de una página es la de
+quien la imprimió**, no la del dueño del equipo. La columna `Gerencia` del contador SDS
+se sigue leyendo al dataset pero ya no agrupa nada.
+
+Como no toda página tiene persona identificable, el ranking cierra con dos barras ámbar
+que mantienen el cuadre contra la factura:
+
+| Balde | Qué es | ago-2026 |
+|---|---|---|
+| `Sin auditoría NDD` | La impresora factura pero NDD no la registró | 24 140 págs |
+| `Fuera del padrón` | Cuentas que imprimen y no están en el Excel (equipos, servicios) | 1 555 págs |
+
+`src/lib/organizacion.js` implementa ese agrupamiento; sumando las 13 gerencias con
+consumo más los dos baldes da exactamente la volumetría del contador.
 
 > Los valores de los PINs viven solo en `.env` (local) y en las variables de entorno de
 > Netlify. No se escriben en este archivo ni en `.env.example`: el escaneo de secretos

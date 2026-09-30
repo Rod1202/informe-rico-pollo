@@ -1,13 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts'
 import { Card, Kpi as Tile, Tabla, Badge, Delta, TooltipBox, Nota, Fuente, Buscador, normaliza } from '../components/ui.jsx'
-import PanelAreas from '../components/PanelAreas.jsx'
 import HistoricoLinea from '../components/HistoricoLinea.jsx'
 import TopRanking, { armarTop } from '../components/TopRanking.jsx'
+import GerenciasBarra, { nombreGerencia } from '../components/GerenciasBarra.jsx'
+import ModalTrabajos from '../components/ModalTrabajos.jsx'
 import { C, CAT } from '../lib/palette.js'
-import { filtrar, medidas, comparar, periodoPrevio, serieMensual } from '../lib/measures.js'
-import { prorratear, agruparPorUsuario, trabajosProrrateados, SIN_AUDITORIA } from '../lib/prorrateo.js'
+import { filtrar, medidas, periodoPrevio } from '../lib/measures.js'
+import { prorratear, trabajosProrrateados, SIN_AUDITORIA } from '../lib/prorrateo.js'
 import { compararAtribuido, serieMensualAtribuida } from '../lib/gerencia.js'
+import { agruparPersonas, agruparAreasPersonas, usuariosDePersonas, balde } from '../lib/organizacion.js'
 import { fInt, fMoney, fTarifa, fPct, fDelta, fCompact, titulo } from '../lib/format.js'
 
 const IC = {
@@ -44,7 +46,9 @@ function Var({ pct, alta, sinBase }) {
 
 
 const DIMENSIONES = [
-  { id: 'area', l: 'Área', col: 'Área' },
+  { id: 'area', l: 'Área', col: 'Área (padrón)' },
+  { id: 'dpto', l: 'Depto.', col: 'Departamento (padrón)' },
+  { id: 'ubicacion', l: 'Ubicación', col: 'Ubicación del equipo' },
   { id: 'sede', l: 'Sede', col: 'Sede' },
   { id: 'serie', l: 'Impresora', col: 'Serie / área' }
 ]
@@ -62,12 +66,15 @@ const nombreUsuario = (u) =>
 export default function Kpi({ ctx }) {
   const {
     m, mensual, actual, esAcumulado, contador, tarifas, periodos, filtros, rowsTodoPeriodo,
-    ndd, catalogoSeries, periodosSel, atribucion, areasAtribuidas, usuariosAtribuidos, alcance
+    ndd, catalogoSeries, periodosSel, atribucion, atribucionCompleta, repartoHistorico, alcance
   } = ctx
 
   // Con un PIN de gerencia el tablero ya viene acotado a sus usuarios: las
   // medidas y los rankings salen del reparto, no del contador completo.
   const esGerencia = alcance?.tipo === 'gerencia'
+  // La jerarquia sale del padron de personas, no de la columna Gerencia del
+  // contador: agrupa por quien imprimio, no por de quien es el equipo.
+  const padron = ctx.dataset.gerencias?.usuarios ?? {}
 
 
   const previo = useMemo(() => periodoPrevio(periodos, filtros.periodo), [periodos, filtros.periodo])
@@ -124,32 +131,11 @@ export default function Kpi({ ctx }) {
   const [dimension, setDimension] = useState('area')
   const dimActiva = DIMENSIONES.find((d) => d.id === dimension) ?? DIMENSIONES[0]
   const catSerie = useMemo(() => new Map(catalogoSeries.map((c) => [c.serie, c])), [catalogoSeries])
-  const rankingDim = useMemo(() => {
-    const r = esGerencia
-      ? compararAtribuido(alcance.asignadoActual, alcance.asignadoPrevio, dimension, tarifas, catSerie)
-      : comparar(rowsActual, rowsPrevio, dimension, tarifas)
-    return dimension === 'serie' ? r.filter((x) => x.volumetria > 0 || x.volPrev > 0) : r
-  }, [esGerencia, alcance, rowsActual, rowsPrevio, dimension, tarifas, catSerie])
-  const rankingAreas = useMemo(
-    () =>
-      esGerencia
-        ? compararAtribuido(alcance.asignadoActual, alcance.asignadoPrevio, 'area', tarifas, catSerie)
-        : comparar(rowsActual, rowsPrevio, 'area', tarifas),
-    [esGerencia, alcance, rowsActual, rowsPrevio, tarifas, catSerie]
-  )
-
-
-  // Area seleccionada: la eligen tanto el top 5 como el grafico de ranking, y
-  // filtra la tabla de usuarios y el panel de detalle.
-  const [areaSel, setAreaSel] = useState(null)
-  const alternarArea = useCallback((a) => setAreaSel((prev) => (prev === a ? null : a)), [])
-
-
-  // Reparto del periodo anterior, necesario para la variacion del top de usuarios.
-  const usuariosPrev = useMemo(() => {
-    if (esGerencia) return alcance.usuariosPrev
-    if (!previo) return []
-    const res = prorratear({
+  // Reparto del periodo anterior sin acotar: lo usan el grafico de gerencias y
+  // la variacion del top de usuarios.
+  const atribucionPrevia = useMemo(() => {
+    if (!previo) return null
+    return prorratear({
       contador,
       porSerieUsuario: ndd.porSerieUsuario,
       catalogoSeries,
@@ -158,10 +144,83 @@ export default function Kpi({ ctx }) {
       filtros: { ...filtros, periodo: previo.key },
       periodos
     })
-    return agruparPorUsuario(res, tarifas)
-  }, [esGerencia, alcance, previo, contador, ndd.porSerieUsuario, catalogoSeries, tarifas, filtros])
+  }, [previo, contador, ndd.porSerieUsuario, catalogoSeries, tarifas, filtros, periodos])
 
-  const mapaUsuariosPrev = useMemo(() => new Map(usuariosPrev.map((u) => [u.usuario, u])), [usuariosPrev])
+  const repartoTodas = useMemo(
+    () => ({ actual: atribucionCompleta.asignado, previo: atribucionPrevia?.asignado ?? [] }),
+    [atribucionCompleta, atribucionPrevia]
+  )
+
+
+
+  // Gerencia seleccionada en el grafico de barras. Es el primer nivel de la
+  // jerarquia Gerencia -> Area -> Ubicacion, y acota todo lo que viene abajo.
+  const [gerenciaSel, setGerenciaSel] = useState(null)
+  const [areaSel, setAreaSel] = useState(null)
+  const alternarArea = useCallback((a) => setAreaSel((prev) => (prev === a ? null : a)), [])
+  const alternarGerencia = useCallback((g) => {
+    setGerenciaSel((prev) => (prev === g ? null : g))
+    setAreaSel(null)
+  }, [])
+
+  // El grafico compara el parque completo, tambien con un PIN de gerencia: lo
+  // que se acota es el detalle, no la comparativa.
+  // El grafico compara todas las gerencias, tambien con PIN de gerencia: se
+  // arma sobre el reparto completo, no sobre el acotado.
+  const rankingGerencias = useMemo(
+    () => agruparPersonas(repartoTodas.actual, repartoTodas.previo, padron, 'gerencia', tarifas),
+    [repartoTodas, padron, tarifas]
+  )
+
+  // Nombre de la gerencia propia tal como lo escribe el contador.
+  const gerenciaPropia = esGerencia ? alcance.gerencia : null
+
+  // Con PIN de gerencia el detalle arranca y se queda en la gerencia propia.
+  const gerenciaActiva = esGerencia ? gerenciaPropia : gerenciaSel
+
+  // Todo lo que va debajo del grafico se acota a la gerencia elegida, y la
+  // pertenencia la define el padron de personas, no el dueño del equipo.
+  const deGerencia = useCallback(
+    (fila) => !gerenciaActiva || balde(fila, padron, 'gerencia') === gerenciaActiva,
+    [gerenciaActiva, padron]
+  )
+  const asignadoVista = useMemo(
+    () => (gerenciaActiva ? atribucion.asignado.filter(deGerencia) : atribucion.asignado),
+    [atribucion, gerenciaActiva, deGerencia]
+  )
+  const asignadoVistaPrev = useMemo(() => {
+    const base = esGerencia ? alcance.asignadoPrevio : (atribucionPrevia?.asignado ?? [])
+    return gerenciaActiva ? base.filter(deGerencia) : base
+  }, [esGerencia, alcance, atribucionPrevia, gerenciaActiva, deGerencia])
+
+  const areasVisibles = useMemo(
+    () => agruparAreasPersonas(asignadoVista, padron, tarifas),
+    [asignadoVista, padron, tarifas]
+  )
+  const usuariosVisibles = useMemo(
+    () => usuariosDePersonas(asignadoVista, padron, tarifas),
+    [asignadoVista, padron, tarifas]
+  )
+
+  // Area y departamento salen de la persona; ubicacion y serie, del equipo.
+  const rankingDim = useMemo(() => {
+    if (dimension === 'area' || dimension === 'dpto') {
+      return agruparPersonas(asignadoVista, asignadoVistaPrev, padron, dimension, tarifas)
+    }
+    const r = compararAtribuido(asignadoVista, asignadoVistaPrev, dimension, tarifas, catSerie)
+    return dimension === 'serie' ? r.filter((x) => x.volumetria > 0 || x.volPrev > 0) : r
+  }, [asignadoVista, asignadoVistaPrev, padron, dimension, tarifas, catSerie])
+
+  const rankingAreas = useMemo(
+    () => agruparPersonas(asignadoVista, asignadoVistaPrev, padron, 'area', tarifas),
+    [asignadoVista, asignadoVistaPrev, padron, tarifas]
+  )
+
+
+  const mapaUsuariosPrev = useMemo(
+    () => new Map(usuariosDePersonas(asignadoVistaPrev, padron, tarifas).map((u) => [u.usuario, u])),
+    [asignadoVistaPrev, padron, tarifas]
+  )
 
 
   const topAreas = useMemo(
@@ -178,7 +237,7 @@ export default function Kpi({ ctx }) {
   // El top de usuarios es un ranking de personas, asi que deja fuera la fila
   // tecnica de volumen sin auditoria (si existe, se explica en la tabla).
   const topUsuarios = useMemo(() => {
-    const mapaActual = new Map(usuariosAtribuidos.map((u) => [u.usuario, u]))
+    const mapaActual = new Map(usuariosVisibles.map((u) => [u.usuario, u]))
     const claves = [...new Set([...mapaActual.keys(), ...mapaUsuariosPrev.keys()])].filter((k) => k !== SIN_AUDITORIA)
     const items = claves.map((k) => ({
       usuario: k,
@@ -191,11 +250,11 @@ export default function Kpi({ ctx }) {
       valor: (x) => x.actual?.total ?? 0,
       valorPrev: (x) => x.prev?.total ?? 0
     })
-  }, [usuariosAtribuidos, mapaUsuariosPrev])
+  }, [usuariosVisibles, mapaUsuariosPrev])
 
   const personasAtribuidas = useMemo(
-    () => usuariosAtribuidos.filter((u) => u.usuario !== SIN_AUDITORIA).length,
-    [usuariosAtribuidos]
+    () => usuariosVisibles.filter((u) => u.usuario !== SIN_AUDITORIA).length,
+    [usuariosVisibles]
   )
 
 
@@ -206,12 +265,13 @@ export default function Kpi({ ctx }) {
 
 
   // Tabla de usuarios: general, o solo los del area elegida.
+
   const areaElegida = useMemo(
-    () => (areaSel ? areasAtribuidas.find((a) => a.area === areaSel) ?? null : null),
-    [areaSel, areasAtribuidas]
+    () => (areaSel ? areasVisibles.find((a) => a.area === areaSel) ?? null : null),
+    [areaSel, areasVisibles]
   )
   // Base de la tabla: el ranking general, o solo el area elegida arriba.
-  const usuariosBase = areaElegida ? areaElegida.usuarios : usuariosAtribuidos
+  const usuariosBase = areaElegida ? areaElegida.usuarios : usuariosVisibles
   const totalBase = usuariosBase.reduce((a, b) => a + b.total, 0)
 
   const [busqueda, setBusqueda] = useState('')
@@ -225,25 +285,50 @@ export default function Kpi({ ctx }) {
 
   // Serie mensual de lo que muestre el ranking: el area elegida, o el
   // consolidado mientras no haya ninguna.
-  const mensualArea = useMemo(() => {
-    if (esGerencia) {
-      if (!areaSel) return mensual
-      const suyas = new Set([...catSerie.values()].filter((c) => c.area === areaSel).map((c) => c.serie))
-      return serieMensualAtribuida(
-        alcance.asignadoTodo.filter((a) => suyas.has(a.serie)),
-        periodos,
-        tarifas,
-        catSerie
-      )
-    }
-    const rows = areaSel ? rowsTodoPeriodo.filter((r) => r.area === areaSel) : rowsTodoPeriodo
-    return serieMensual(rows, periodos, tarifas)
-  }, [esGerencia, alcance, areaSel, mensual, catSerie, rowsTodoPeriodo, periodos, tarifas])
-
-  const trabajosDe = useCallback(
-    (area, usuario) => trabajosProrrateados(atribucion, ndd.porTrabajo, area, usuario, periodosSel, tarifas),
-    [atribucion, ndd.porTrabajo, periodosSel, tarifas]
+  // El evolutivo sigue el camino elegido: consolidado -> gerencia -> area.
+  const coincideJerarquia = useCallback(
+    (g, a) => (!gerenciaActiva || g === gerenciaActiva) && (!areaSel || a === areaSel),
+    [gerenciaActiva, areaSel]
   )
+
+  const mensualArea = useMemo(() => {
+    if (!gerenciaActiva && !areaSel) return mensual
+    const base = esGerencia ? alcance.asignadoTodo : repartoHistorico.asignado
+    return serieMensualAtribuida(
+      base.filter((a) => coincideJerarquia(balde(a, padron, 'gerencia'), balde(a, padron, 'area'))),
+      periodos,
+      tarifas,
+      catSerie
+    )
+  }, [esGerencia, alcance, repartoHistorico, gerenciaActiva, areaSel, coincideJerarquia, padron, mensual, catSerie, periodos, tarifas])
+
+  // Titulo y etiqueta del evolutivo segun hasta donde se bajo.
+  const rutaEvolutivo = [
+    gerenciaActiva ? nombreGerencia(gerenciaActiva) : null,
+    areaSel ? titulo(areaSel) : null
+  ].filter(Boolean)
+
+  // Detalle de trabajos en ventana flotante: se abre desde cualquier lista de
+  // usuarios y muestra todo lo que imprimio dentro del alcance vigente.
+  const [usuarioModal, setUsuarioModal] = useState(null)
+  const [busquedaTrabajo, setBusquedaTrabajo] = useState('')
+  const abrirUsuario = useCallback((u) => {
+    setUsuarioModal(u)
+    setBusquedaTrabajo('')
+  }, [])
+
+  // El usuario ya pertenece a una sola gerencia y area del padron, asi que sus
+  // trabajos no se filtran: se muestran todos los del periodo.
+  const trabajosModal = useMemo(() => {
+    if (!usuarioModal) return []
+    return trabajosProrrateados(atribucion, ndd.porTrabajo, null, usuarioModal.usuario, periodosSel, tarifas)
+  }, [usuarioModal, atribucion, ndd.porTrabajo, periodosSel, tarifas])
+
+  const alcanceModal = [
+    gerenciaActiva ? nombreGerencia(gerenciaActiva) : null,
+    areaElegida ? titulo(areaElegida.area) : null
+  ].filter(Boolean).join(' › ')
+
 
   return (
     <>
@@ -373,7 +458,19 @@ export default function Kpi({ ctx }) {
         {fInt(m.volColorA3)} páginas por la tarifa A3 de {fTarifa(tarifas.colorA3)}.
       </Nota>
 
-      {/* 4 · Los dos top 5, con variación de consumo y de puesto. */}
+      {/* 4 · Comparativa de gerencias. Gobierna áreas, ubicaciones y usuarios. */}
+      <GerenciasBarra
+        filas={rankingGerencias}
+        activo={gerenciaActiva}
+        onClic={esGerencia ? null : alternarGerencia}
+        propia={esGerencia ? gerenciaPropia : null}
+        soloPropia={esGerencia}
+        sinBase={sinBase}
+        etiquetaPrev={etiquetaPrev}
+        etiqueta={etiqueta}
+      />
+
+      {/* 5 · Los dos top 5, con variación de consumo y de puesto. */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <TopRanking
           title="Top 5 áreas"
@@ -533,14 +630,16 @@ export default function Kpi({ ctx }) {
         mensual={mensualArea}
         periodoActivo={filtros.periodo}
         esAcumulado={esAcumulado}
-        title={areaSel ? `Evolución de ${titulo(areaSel)}` : 'Evolución por área'}
+        title={rutaEvolutivo.length ? `Evolución de ${rutaEvolutivo.join(' › ')}` : 'Evolución del contrato'}
         subtitle={
           areaSel
-            ? `Cómo viene consumiendo esta área mes a mes. Clic en otra barra del ranking de arriba para cambiarla, o en la misma para volver al consolidado.`
-            : 'Consolidado de todas las áreas. Clic en una barra del ranking de arriba para ver la evolución de un área concreta.'
+            ? 'Consumo mes a mes de esta área dentro de la gerencia elegida. Quitá el área para ver la gerencia completa.'
+            : gerenciaActiva
+              ? 'Consumo mes a mes de esta gerencia. Elegí un área en el ranking de abajo para bajar un nivel más.'
+              : 'Consolidado de todas las gerencias. Clic en una barra del gráfico de gerencias para bajar un nivel.'
         }
-        etiqueta={areaSel ? titulo(areaSel) : 'todas las áreas'}
-        vacio="Esta área no registra consumo en ningún periodo."
+        etiqueta={rutaEvolutivo.length ? rutaEvolutivo[rutaEvolutivo.length - 1] : 'todo el contrato'}
+        vacio="No hay consumo registrado en ningún periodo para esta selección."
       />
 
       {/* 6 · Usuarios: top general, o solo los del área elegida arriba. */}
@@ -548,8 +647,8 @@ export default function Kpi({ ctx }) {
         title={areaElegida ? `Usuarios de ${titulo(areaElegida.area)}` : 'Consumo por usuario · ranking general'}
         subtitle={
           areaElegida
-            ? 'Solo los usuarios que imprimieron en las impresoras de esta área. Quita el filtro para volver al ranking general.'
-            : 'Quién concentra el volumen facturado, en qué áreas y cuánto representa ese consumo'
+            ? 'Solo los usuarios que imprimieron en las impresoras de esta área. Clic en una fila para ver el detalle de sus trabajos.'
+            : 'Quién concentra el volumen facturado. Clic en una fila para ver el detalle de sus trabajos.'
         }
         right={
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
@@ -571,6 +670,8 @@ export default function Kpi({ ctx }) {
         <Tabla
           maxAltura="420px"
           initialSort={{ key: 'total', dir: 'desc' }}
+          onFila={(r) => (r.usuario === SIN_AUDITORIA ? null : abrirUsuario(r))}
+          filaActiva={usuarioModal?.usuario}
           vacio={busqueda ? `Ningún usuario coincide con «${busqueda}».` : 'Sin usuarios para los filtros aplicados.'}
           columnas={[
             {
@@ -647,15 +748,16 @@ export default function Kpi({ ctx }) {
         </Nota>
       </Card>
 
-      {/* 7 · Detalle área → usuario → trabajo, gobernado por la misma selección. */}
-      <PanelAreas
-        areas={areasAtribuidas}
-        trabajosDe={trabajosDe}
-        tarifas={tarifas}
-        area={areaSel}
-        onArea={alternarArea}
-        mostrarRanking={false}
-      />
+      {usuarioModal && (
+        <ModalTrabajos
+          usuario={usuarioModal}
+          trabajos={trabajosModal}
+          alcance={alcanceModal}
+          busqueda={busquedaTrabajo}
+          onBusqueda={setBusquedaTrabajo}
+          onCerrar={() => setUsuarioModal(null)}
+        />
+      )}
     </>
   )
 }

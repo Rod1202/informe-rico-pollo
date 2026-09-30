@@ -272,6 +272,8 @@ export function agruparPorArea(resultado, tarifas) {
       g = {
         area: nombreArea,
         sedes: new Set(),
+        gerencias: new Set(),
+        ubicaciones: new Set(),
         equipos: new Set(),
         mono: 0,
         color: 0,
@@ -293,6 +295,8 @@ export function agruparPorArea(resultado, tarifas) {
     g.equipos.add(a.serie)
     if (a.sinAuditoria) g.sinAuditoria += a.bn + a.color
     if (info?.sede) g.sedes.add(info.sede)
+    if (info?.gerencia) g.gerencias.add(info.gerencia)
+    if (info?.ubicacion) g.ubicaciones.add(info.ubicacion)
 
     let u = g.usuarios.get(a.usuario)
     if (!u) {
@@ -322,6 +326,8 @@ export function agruparPorArea(resultado, tarifas) {
     .map((g) => ({
       ...g,
       sedes: [...g.sedes],
+      gerencias: [...g.gerencias],
+      ubicaciones: [...g.ubicaciones],
       equipos: g.equipos.size,
       motivosSinAuditoria: motivos.get(g.area) ?? [],
       usuarios: [...g.usuarios.values()]
@@ -370,9 +376,10 @@ export function agruparPorUsuario(resultado, tarifas) {
     .sort((a, b) => b.total - a.total)
 }
 
-// Trabajos de un usuario dentro de un area, repartidos dentro del total que ya
-// se le asigno a ese usuario en cada impresora.
-export function trabajosProrrateados(resultado, porTrabajo, area, usuario, periodosSel, tarifas) {
+// Trabajos de un usuario, repartidos dentro del total que ya se le asigno en
+// cada impresora. `area` null trae todo lo que imprimio, sin importar el area;
+// `series`, si viene, acota a ese conjunto de impresoras.
+export function trabajosProrrateados(resultado, porTrabajo, area, usuario, periodosSel, tarifas, series = null) {
   const { factores, cat } = resultado
   if (!usuario || usuario === SIN_AUDITORIA) return []
 
@@ -382,7 +389,8 @@ export function trabajosProrrateados(resultado, porTrabajo, area, usuario, perio
   for (const t of porTrabajo) {
     if (t.usuario !== usuario) continue
     if (periodosSel && !periodosSel.includes(t.periodo)) continue
-    if ((cat.get(t.serie)?.area ?? FUERA_CONTRATO) !== area) continue
+    if (area != null && (cat.get(t.serie)?.area ?? FUERA_CONTRATO) !== area) continue
+    if (series && !series.has(t.serie)) continue
     const k = clave(t.serie, t.periodo)
     if (!grupos.has(k)) grupos.set(k, [])
     grupos.get(k).push(t)
@@ -401,9 +409,15 @@ export function trabajosProrrateados(resultado, porTrabajo, area, usuario, perio
     ts.forEach((t, i) => {
       let o = acc.get(t.titulo)
       if (!o) {
-        o = { titulo: t.titulo, mono: 0, color: 0, total: 0, jobs: 0, costo: 0, otros: !!t.otros, equipos: new Set() }
+        o = {
+          titulo: t.titulo, mono: 0, color: 0, total: 0, jobs: 0, costo: 0, otros: !!t.otros,
+          equipos: new Set(), areas: new Set(), ubicaciones: new Set()
+        }
         acc.set(t.titulo, o)
       }
+      const info = cat.get(t.serie)
+      if (info?.area) o.areas.add(info.area)
+      if (info?.ubicacion) o.ubicaciones.add(info.ubicacion)
       o.mono += repBN[i]
       o.color += repColor[i]
       o.total += repBN[i] + repColor[i]
@@ -414,6 +428,6 @@ export function trabajosProrrateados(resultado, porTrabajo, area, usuario, perio
   }
 
   return [...acc.values()]
-    .map((o) => ({ ...o, equipos: o.equipos.size, __key: o.titulo }))
+    .map((o) => ({ ...o, equipos: o.equipos.size, areas: [...o.areas], ubicaciones: [...o.ubicaciones], __key: o.titulo }))
     .sort((a, b) => b.total - a.total)
 }

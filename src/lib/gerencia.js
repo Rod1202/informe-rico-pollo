@@ -15,8 +15,8 @@ const div = (a, b) => (b ? a / b : 0)
 export function usuariosDeGerencia(padron, gerencia) {
   const objetivo = norm(gerencia)
   const out = new Set()
-  for (const [usuario, division] of Object.entries(padron ?? {})) {
-    if (norm(division) === objetivo) out.add(String(usuario).toLowerCase())
+  for (const [usuario, p] of Object.entries(padron ?? {})) {
+    if (norm(p?.g) === objetivo) out.add(String(usuario).toLowerCase())
   }
   return out
 }
@@ -131,7 +131,11 @@ export function compararAtribuido(asignadoActual, asignadoPrevio, campo, tarifas
     for (const a of filas) {
       const info = cat.get(a.serie)
       const clave =
-        campo === 'serie' ? a.serie : campo === 'sede' ? (info?.sede ?? '—') : (info?.area ?? FUERA_CONTRATO)
+        campo === 'serie' ? a.serie
+        : campo === 'sede' ? (info?.sede ?? '—')
+        : campo === 'gerencia' ? (info?.gerencia ?? 'SIN GERENCIA')
+        : campo === 'ubicacion' ? (info?.ubicacion ?? '—')
+        : (info?.area ?? FUERA_CONTRATO)
       const o = g.get(clave) ?? { clave, volumetria: 0, volBN: 0, volColor: 0, facturacion: 0, equipos: new Set() }
       o.volBN += a.bn
       o.volColor += a.color

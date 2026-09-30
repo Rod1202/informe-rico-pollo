@@ -23,7 +23,7 @@ const esSinAuditoria = (u) => u?.usuario === SIN_AUDITORIA
 // `area` + `onArea`; si no, el panel la maneja por su cuenta.
 export default function PanelAreas({
   areas,
-  trabajosDe,
+  onUsuario = null,
   tarifas,
   area: areaProp = null,
   onArea = null,
@@ -56,11 +56,6 @@ export default function PanelAreas({
     () => usuarios.find((u) => u.usuario === usuarioSel) ?? usuarios[0] ?? null,
     [usuarios, usuarioSel]
   )
-
-  const trabajos = useMemo(() => {
-    if (!areaActiva || !usuarioActivo || esSinAuditoria(usuarioActivo)) return []
-    return trabajosDe(areaActiva.area, usuarioActivo.usuario)
-  }, [trabajosDe, areaActiva, usuarioActivo])
 
   const totalAreas = areas.reduce((a, b) => a + b.total, 0)
   const nombreUsuario = (u) => (esSinAuditoria(u) ? 'Sin auditoria NDD' : u?.nombre && u.nombre !== '-' ? u.nombre : u?.usuario ?? '—')
@@ -232,15 +227,17 @@ export default function PanelAreas({
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-5">
+          <div>
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Usuarios de {titulo(areaActiva.area)} · clic en una fila para ver sus trabajos
+                Usuarios de {titulo(areaActiva.area)} · clic en una fila para abrir el detalle de sus trabajos
               </p>
               <Tabla
                 maxAltura="420px"
                 initialSort={{ key: 'total', dir: 'desc' }}
-                onFila={(r) => setUsuarioSel(r.usuario)}
+                onFila={(r) => {
+                  setUsuarioSel(r.usuario)
+                  if (onUsuario && !esSinAuditoria(r)) onUsuario(r)
+                }}
                 filaActiva={usuarioActivo?.usuario}
                 vacio="Ningún usuario coincide con la búsqueda."
                 columnas={[
@@ -291,94 +288,6 @@ export default function PanelAreas({
                 }}
               />
             </div>
-
-            <div className="lg:col-span-7">
-              {usuarioActivo ? (
-                <div
-                  className={`mb-2 rounded-xl border px-3 py-2 flex items-center gap-3 ${
-                    esSinAuditoria(usuarioActivo) ? 'border-amber-200 bg-amber-50' : 'border-mt-blue/25 bg-mt-blueTint'
-                  }`}
-                >
-                  <span
-                    className={`w-9 h-9 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 shadow-sm ${
-                      esSinAuditoria(usuarioActivo) ? 'bg-amber-500' : 'bg-gradient-to-tr from-mt-blue to-mt-blueDeep'
-                    }`}
-                  >
-                    {iniciales(usuarioActivo)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p
-                      className={`text-[9px] font-bold uppercase tracking-wider leading-tight ${
-                        esSinAuditoria(usuarioActivo) ? 'text-amber-700' : 'text-mt-blue'
-                      }`}
-                    >
-                      {esSinAuditoria(usuarioActivo) ? 'Volumen sin atribuir' : 'Viendo los trabajos de'}
-                    </p>
-                    <p className="text-[13px] font-bold text-slate-900 leading-tight truncate">{nombreUsuario(usuarioActivo)}</p>
-                    <p className="text-[10px] text-slate-500 leading-tight truncate">
-                      {esSinAuditoria(usuarioActivo)
-                        ? `${titulo(areaActiva.area)} · ${usuarioActivo.equipos} equipo(s) sin registro NDD`
-                        : `${usuarioActivo.usuario} · ${titulo(areaActiva.area)} · ${usuarioActivo.equipos} equipo(s)`}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p
-                      className={`text-sm font-bold num leading-none ${
-                        esSinAuditoria(usuarioActivo) ? 'text-amber-700' : 'text-mt-blue'
-                      }`}
-                    >
-                      {fMoney(usuarioActivo.costo)}
-                    </p>
-                    <p className="text-[10px] text-slate-500 num mt-1">
-                      {fInt(usuarioActivo.total)} págs
-                      {esSinAuditoria(usuarioActivo) ? '' : ` · ${fInt(usuarioActivo.jobs)} trabajos`}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="mb-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-[11px] text-slate-500">
-                  Selecciona un usuario de la tabla para ver el detalle de sus trabajos.
-                </div>
-              )}
-              <Tabla
-                maxAltura="420px"
-                initialSort={{ key: 'total', dir: 'desc' }}
-                vacio={
-                  esSinAuditoria(usuarioActivo)
-                    ? 'Esta impresora no tiene trabajos en NDD: su volumen se factura pero no se puede desglosar.'
-                    : 'Selecciona un usuario para ver el detalle de sus trabajos.'
-                }
-                columnas={[
-                  {
-                    key: 'titulo',
-                    label: 'Nombre del trabajo',
-                    render: (r) => (
-                      <span
-                        title={r.titulo}
-                        className={`truncate max-w-[330px] inline-block align-bottom ${r.otros ? 'text-slate-400 italic' : 'text-slate-700'}`}
-                      >
-                        {r.titulo}
-                      </span>
-                    )
-                  },
-                  { key: 'jobs', label: 'Veces', align: 'right', render: (r) => fInt(r.jobs) },
-                  { key: 'mono', label: 'B/N', align: 'right', render: (r) => fInt(r.mono) },
-                  { key: 'color', label: 'Color', align: 'right', render: (r) => fInt(r.color) },
-                  { key: 'total', label: 'Págs', align: 'right', render: (r) => <strong className="text-slate-900">{fInt(r.total)}</strong> },
-                  { key: 'costo', label: 'Costo', align: 'right', render: (r) => <span className="font-semibold text-mt-blue">{fMoney(r.costo)}</span> }
-                ]}
-                filas={trabajos}
-                pie={{
-                  titulo: `TOTAL · ${trabajos.length} títulos`,
-                  jobs: fInt(trabajos.reduce((a, b) => a + b.jobs, 0)),
-                  mono: fInt(trabajos.reduce((a, b) => a + b.mono, 0)),
-                  color: fInt(trabajos.reduce((a, b) => a + b.color, 0)),
-                  total: fInt(trabajos.reduce((a, b) => a + b.total, 0)),
-                  costo: fMoney(trabajos.reduce((a, b) => a + b.costo, 0))
-                }}
-              />
-            </div>
-          </div>
 
           <div className="grid grid-cols-1 gap-3 mt-3">
             <Nota tono="azul" titulo="Cómo se reparte este consumo" icono="▸">

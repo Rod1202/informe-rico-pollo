@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, AreaChart, Area } from 'recharts'
 import { Card, Tabla, Leyenda, TooltipBox, Nota, Semaforo, Ring } from '../components/ui.jsx'
 import PanelAreas from '../components/PanelAreas.jsx'
+import ModalTrabajos from '../components/ModalTrabajos.jsx'
 import { C, CAT, ESTADO } from '../lib/palette.js'
 import { nddAgrupar } from '../lib/measures.js'
 import { trabajosProrrateados } from '../lib/prorrateo.js'
@@ -13,9 +14,16 @@ export default function Auditoria({ ctx }) {
     atribucion, areasAtribuidas
   } = ctx
 
-  const trabajosDe = useCallback(
-    (area, usuario) => trabajosProrrateados(atribucion, ndd.porTrabajo, area, usuario, periodosSel, tarifas),
-    [atribucion, ndd.porTrabajo, periodosSel, tarifas]
+  // Mismo detalle de trabajos que en Gerencia, en ventana flotante.
+  const [usuarioModal, setUsuarioModal] = useState(null)
+  const [busquedaTrabajo, setBusquedaTrabajo] = useState('')
+  const abrirUsuario = useCallback((u) => {
+    setUsuarioModal(u)
+    setBusquedaTrabajo('')
+  }, [])
+  const trabajosModal = useMemo(
+    () => (usuarioModal ? trabajosProrrateados(atribucion, ndd.porTrabajo, null, usuarioModal.usuario, periodosSel, tarifas) : []),
+    [usuarioModal, atribucion, ndd.porTrabajo, periodosSel, tarifas]
   )
 
   const comparativo = useMemo(
@@ -263,9 +271,19 @@ export default function Auditoria({ ctx }) {
       
       <PanelAreas
         areas={areasAtribuidas}
-        trabajosDe={trabajosDe}
+        onUsuario={abrirUsuario}
         tarifas={tarifas}
       />
+
+      {usuarioModal && (
+        <ModalTrabajos
+          usuario={usuarioModal}
+          trabajos={trabajosModal}
+          busqueda={busquedaTrabajo}
+          onBusqueda={setBusquedaTrabajo}
+          onCerrar={() => setUsuarioModal(null)}
+        />
+      )}
 
       
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
