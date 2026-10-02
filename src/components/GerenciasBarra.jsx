@@ -39,7 +39,10 @@ export default function GerenciasBarra({
   etiqueta = ''
 }) {
   const datos = filas
-    .filter((g) => g.volumetria > 0 || g.volPrev > 0)
+    // Una gerencia real que cayo a cero sigue en el grafico: ese cero es
+    // informacion. Un balde residual en cero no es una gerencia que dejo de
+    // imprimir, es un problema que se resolvio, asi que desaparece.
+    .filter((g) => ((g.residual ?? ES_RESIDUAL(g.clave)) ? g.volumetria > 0 : g.volumetria > 0 || g.volPrev > 0))
     .map((g) => ({
       ...g,
       residual: g.residual ?? ES_RESIDUAL(g.clave),
