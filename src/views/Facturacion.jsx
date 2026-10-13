@@ -29,8 +29,8 @@ export default function Facturacion({ ctx }) {
       <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
           { l: 'Facturación del periodo', v: fMoney(m.facturacion), s: esAcumulado ? `${mensual.mesesEvaluados} meses` : actual?.largo },
-          { l: 'Clic B/N', v: fMoney(m.clicBN), s: `${fPct(m.pctFactBN)} del clic` },
-          { l: 'Clic color', v: fMoney(m.clicColor), s: `${fPct(m.pctFactColor)} del clic` },
+          { l: 'Impresión B/N', v: fMoney(m.clicBN), s: `${fPct(m.pctFactBN)} de la impresión` },
+          { l: 'Impresión color', v: fMoney(m.clicColor), s: `${fPct(m.pctFactColor)} de la impresión` },
           { l: 'Cargo fijo', v: fMoney(m.cargoFijo), s: `${fPct(m.pctCargoFijo)} de la factura` },
           { l: 'Costo por página', v: fMoney3(m.costoPagina), s: 'incluye cargo fijo' },
           { l: 'Facturación por equipo', v: fMoney(m.factPorEquipo), s: `sobre ${m.equiposActivos} activos` }
@@ -44,7 +44,7 @@ export default function Facturacion({ ctx }) {
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <Card className="lg:col-span-7" title="Estructura de la factura mes a mes" subtitle="Clic B/N, clic color y cargo fijo apilados">
+        <Card className="lg:col-span-7" title="Estructura de la factura mes a mes" subtitle="Impresión B/N, impresión color y cargo fijo apilados">
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={datos} margin={{ top: 18, right: 10, left: -4, bottom: 0 }}>
@@ -52,8 +52,8 @@ export default function Facturacion({ ctx }) {
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.text, fontWeight: 600 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: C.axis }} tickFormatter={(v) => `$${fCompact(v)}`} axisLine={false} tickLine={false} width={56} />
                 <Tooltip content={<TooltipBox formato={fMoney} />} cursor={{ fill: 'rgba(0,102,255,0.05)' }} />
-                <Bar dataKey="clicBN" name="Clic B/N" stackId="f" fill={CAT[0]} maxBarSize={64} />
-                <Bar dataKey="clicColor" name="Clic color" stackId="f" fill={CAT[2]} maxBarSize={64} />
+                <Bar dataKey="clicBN" name="Impresión B/N" stackId="f" fill={CAT[0]} maxBarSize={64} />
+                <Bar dataKey="clicColor" name="Impresión color" stackId="f" fill={CAT[2]} maxBarSize={64} />
                 <Bar dataKey="fijo" name="Cargo fijo" stackId="f" fill={CAT[1]} radius={[4, 4, 0, 0]} maxBarSize={64}>
                   <LabelList
                     position="top"
@@ -68,8 +68,8 @@ export default function Facturacion({ ctx }) {
           <Leyenda
             className="mt-2 justify-center"
             items={[
-              { label: 'Clic B/N', color: CAT[0], value: fMoney(m.clicBN) },
-              { label: 'Clic color', color: CAT[2], value: fMoney(m.clicColor) },
+              { label: 'Impresión B/N', color: CAT[0], value: fMoney(m.clicBN) },
+              { label: 'Impresión color', color: CAT[2], value: fMoney(m.clicColor) },
               { label: 'Cargo fijo', color: CAT[1], value: fMoney(m.cargoFijo) }
             ]}
           />
@@ -95,8 +95,8 @@ export default function Facturacion({ ctx }) {
           <Card title="Tarifas de contrato" subtitle="Tabla de parámetros — cambiarlas recalcula todo el informe">
             <div className="grid grid-cols-3 gap-3 text-center">
               {[
-                { l: 'Clic B/N', v: tarifas.bn },
-                { l: 'Clic color', v: tarifas.color },
+                { l: 'Impresión B/N', v: tarifas.bn },
+                { l: 'Impresión color', v: tarifas.color },
                 { l: 'Color A3', v: tarifas.colorA3 }
               ].map((t) => (
                 <div key={t.l} className="rounded-xl border border-slate-200 bg-slate-50 py-3">
@@ -106,7 +106,7 @@ export default function Facturacion({ ctx }) {
               ))}
             </div>
             <Nota tono="azul" titulo="Regla A3" icono="▸">
-              La <strong>{tarifas.nombreA3}</strong> factura el clic color a{' '}
+              La <strong>{tarifas.nombreA3}</strong> factura la impresión color a{' '}
               <strong className="num">${tarifas.colorA3.toFixed(2)}</strong> (adicional A3). El resto del parque va a{' '}
               <strong className="num">${tarifas.color.toFixed(5)}</strong>. Validado contra el importe de origen:{' '}
               <strong className="num">{fMoney(m.difClicOrigen)}</strong> de diferencia.
@@ -123,7 +123,7 @@ export default function Facturacion({ ctx }) {
               { key: 'clave', label: 'Sede', render: (r) => <span className="font-semibold text-slate-800">{titulo(r.clave)}</span> },
               { key: 'equiposTotales', label: 'Equipos', align: 'right' },
               { key: 'volumetria', label: 'Páginas', align: 'right', render: (r) => fInt(r.volumetria) },
-              { key: 'clicVariable', label: 'Clic', align: 'right', render: (r) => fMoney(r.clicVariable) },
+              { key: 'clicVariable', label: 'Impresión', align: 'right', render: (r) => fMoney(r.clicVariable) },
               { key: 'cargoFijo', label: 'Cargo fijo', align: 'right', render: (r) => fMoney(r.cargoFijo) },
               { key: 'facturacion', label: 'Total', align: 'right', render: (r) => <strong>{fMoney(r.facturacion)}</strong> },
               { key: 'pctParticipacionFact', label: '% fact.', align: 'right', render: (r) => fPct(r.pctParticipacionFact, 0) },
@@ -181,7 +181,7 @@ export default function Facturacion({ ctx }) {
             { key: 'volColor', label: 'Color', align: 'right', render: (r) => fInt(r.volColor) },
             { key: 'volumetria', label: 'Páginas', align: 'right', render: (r) => fInt(r.volumetria) },
             { key: 'pctParticipacionVol', label: '% vol', align: 'right', render: (r) => fPct(r.pctParticipacionVol) },
-            { key: 'clicVariable', label: 'Clic', align: 'right', render: (r) => fMoney(r.clicVariable) },
+            { key: 'clicVariable', label: 'Impresión', align: 'right', render: (r) => fMoney(r.clicVariable) },
             { key: 'cargoFijo', label: 'Cargo fijo', align: 'right', render: (r) => fMoney(r.cargoFijo) },
             { key: 'facturacion', label: 'Total', align: 'right', render: (r) => <strong>{fMoney(r.facturacion)}</strong> },
             { key: 'pctParticipacionFact', label: '% fact', align: 'right', render: (r) => fPct(r.pctParticipacionFact) },

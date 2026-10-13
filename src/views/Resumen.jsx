@@ -116,9 +116,9 @@ export default function Resumen({ ctx }) {
   const mesCorto = esAcumulado ? 'acumulada' : (actual?.label ?? '').split('-')[0]
 
   const tarifasClic = [
-    { label: 'Clic B/N', detalle: 'Toda impresión monocroma del parque', tarifa: tarifas.bn, paginas: m.volBN, importe: m.clicBN, color: CAT[0] },
-    { label: 'Clic color', detalle: 'Color en los equipos del parque estándar', tarifa: tarifas.color, paginas: m.volColorStd, importe: m.clicColorStd, color: CAT[1] },
-    { label: 'Clic adicional A3', detalle: `Solo color de la ${tarifas.nombreA3}`, tarifa: tarifas.colorA3, paginas: m.volColorA3, importe: m.clicColorA3, color: CAT[3] }
+    { label: 'Impresión B/N', detalle: 'Toda impresión monocroma del parque', tarifa: tarifas.bn, paginas: m.volBN, importe: m.clicBN, color: CAT[0] },
+    { label: 'Impresión color', detalle: 'Color en los equipos del parque estándar', tarifa: tarifas.color, paginas: m.volColorStd, importe: m.clicColorStd, color: CAT[1] },
+    { label: 'Impresión adicional A3', detalle: `Solo color de la ${tarifas.nombreA3}`, tarifa: tarifas.colorA3, paginas: m.volColorA3, importe: m.clicColorA3, color: CAT[3] }
   ]
 
   return (
@@ -142,7 +142,7 @@ export default function Resumen({ ctx }) {
             />
             <Kpi
               icon={<Icono d={IC.clic} />}
-              label="Clic variable"
+              label="Impresión variable"
               value={fMoney(m.clicVariable)}
               foot={<span className="text-[10px] text-slate-400 font-medium">B/N + Color</span>}
             />
@@ -166,18 +166,18 @@ export default function Resumen({ ctx }) {
                   <p className="text-[11px] font-semibold text-slate-700">
                     Cargo fijo / total factura: <span className="text-mt-blue font-bold num">{fPct(m.pctCargoFijo)}</span>
                   </p>
-                  <p className="text-[10px] text-slate-400">El clic variable representa el {fPct(1 - m.pctCargoFijo)} restante</p>
+                  <p className="text-[10px] text-slate-400">La impresión variable representa el {fPct(1 - m.pctCargoFijo)} restante</p>
                 </div>
                 <p className="text-[11px] text-slate-500 leading-snug">
                   El color es el <strong className="text-slate-700 num">{fPct(m.pctVolColor)}</strong> del volumen pero el{' '}
-                  <strong className="text-slate-700 num">{fPct(m.pctFactColor)}</strong> del clic facturado.
+                  <strong className="text-slate-700 num">{fPct(m.pctFactColor)}</strong> de la impresión facturada.
                 </p>
               </div>
               <div className="flex items-center justify-center gap-3 sm:gap-5 flex-wrap">
                 <Ring value={m.pctVolBN} label="Vol B/N" color={CAT[0]} />
                 <Ring value={m.pctVolColor} label="Vol Color" color={CAT[1]} />
                 <Ring value={m.pctCargoFijo} label="Cargo fijo" color={CAT[3]} />
-                <Ring value={1 - m.pctCargoFijo} label="Fact. clic" color={CAT[2]} />
+                <Ring value={1 - m.pctCargoFijo} label="Fact. impresión" color={CAT[2]} />
                 <Ring value={m.pctEquiposActivos} label="Equipos activos" color={ESTADO.ok} />
               </div>
             </div>
@@ -349,7 +349,7 @@ export default function Resumen({ ctx }) {
 
         <Card
           className="lg:col-span-4"
-          title="Costos de clic vigentes"
+          title="Costos de impresión vigentes"
           subtitle="Tarifas del contrato aplicadas a la volumetría del periodo"
           right={<Badge tone="azul">por página</Badge>}
         >
@@ -373,7 +373,7 @@ export default function Resumen({ ctx }) {
 
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
             <span className="text-[10px] text-slate-500">
-              Clic variable {cardEtiqueta}: <strong className="text-slate-800 num">{fMoney(m.clicVariable)}</strong> sobre{' '}
+              Impresión variable {cardEtiqueta}: <strong className="text-slate-800 num">{fMoney(m.clicVariable)}</strong> sobre{' '}
               <strong className="text-slate-800 num">{fInt(m.volumetria)}</strong> págs
             </span>
             <Semaforo estado={Math.abs(m.difClicOrigen) < 0.005 ? 'ok' : 'grave'}>
@@ -381,7 +381,7 @@ export default function Resumen({ ctx }) {
             </Semaforo>
           </div>
 
-          <Nota tono="aviso" titulo="Regla del clic adicional A3" icono="▸">
+          <Nota tono="aviso" titulo="Regla de la impresión adicional A3" icono="▸">
             Solo la <strong>{tarifas.nombreA3}</strong> factura el color a{' '}
             <strong className="num">{fTarifa(tarifas.colorA3)}</strong>. Su monocromo se cobra a la tarifa B/N normal, igual que el resto
             del parque.
@@ -393,7 +393,7 @@ export default function Resumen({ ctx }) {
         <Card
           className="lg:col-span-7"
           title={`Composición de facturación (${serieMeses.map((s) => s.label).join(' · ')})`}
-          subtitle="Clic variable contratado frente al cargo fijo mensual"
+          subtitle="Impresión variable contratada frente al cargo fijo mensual"
           right={
             <Semaforo estado={Math.abs(m.difClicOrigen) < 0.005 ? 'ok' : 'grave'}>Dif. origen {fMoney(m.difClicOrigen)}</Semaforo>
           }
@@ -406,7 +406,7 @@ export default function Resumen({ ctx }) {
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.text, fontWeight: 600 }} axisLine={false} tickLine={false} className="capitalize" />
                   <YAxis tick={{ fontSize: 10, fill: C.axis }} tickFormatter={(v) => `$${fCompact(v)}`} axisLine={false} tickLine={false} width={54} />
                   <Tooltip content={<TooltipBox formato={fMoney} />} cursor={{ fill: 'rgba(0,102,255,0.05)' }} />
-                  <Bar dataKey="clic" name="Clic variable" fill={CAT[0]} radius={[4, 4, 0, 0]} maxBarSize={38}>
+                  <Bar dataKey="clic" name="Impresión variable" fill={CAT[0]} radius={[4, 4, 0, 0]} maxBarSize={38}>
                     <LabelList dataKey="clic" position="top" formatter={(v) => `$${fCompact(v)}`} style={{ fontSize: 9, fill: C.textMuted, fontWeight: 600 }} />
                   </Bar>
                   <Bar dataKey="fijo" name="Cargo fijo" fill={CAT[1]} radius={[4, 4, 0, 0]} maxBarSize={38}>
@@ -419,7 +419,7 @@ export default function Resumen({ ctx }) {
               <div className="flex items-start gap-2.5">
                 <span className="w-3.5 h-3.5 rounded shrink-0 mt-0.5" style={{ background: CAT[0] }} />
                 <div>
-                  <p className="font-bold text-slate-700 num">Clic variable ({fMoney(m.clicVariable)})</p>
+                  <p className="font-bold text-slate-700 num">Impresión variable ({fMoney(m.clicVariable)})</p>
                   <p>Impresiones y copias facturadas según lectura de contador.</p>
                 </div>
               </div>

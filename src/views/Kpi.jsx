@@ -1,15 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts'
-import { Card, Kpi as Tile, Tabla, Badge, Delta, TooltipBox, Nota, Fuente, Buscador, normaliza } from '../components/ui.jsx'
+import { Card, Kpi as Tile, Tabla, Badge, Delta, TooltipBox, Nota, Buscador, normaliza } from '../components/ui.jsx'
 import HistoricoLinea from '../components/HistoricoLinea.jsx'
-import TopRanking, { armarTop } from '../components/TopRanking.jsx'
 import GerenciasBarra, { nombreGerencia } from '../components/GerenciasBarra.jsx'
 import ModalTrabajos from '../components/ModalTrabajos.jsx'
-import { C, CAT } from '../lib/palette.js'
+import { C, CAT, ESTADO } from '../lib/palette.js'
 import { filtrar, medidas, periodoPrevio } from '../lib/measures.js'
 import { prorratear, trabajosProrrateados, SIN_AUDITORIA } from '../lib/prorrateo.js'
 import { compararAtribuido, serieMensualAtribuida } from '../lib/gerencia.js'
-import { agruparPersonas, agruparAreasPersonas, usuariosDePersonas, balde } from '../lib/organizacion.js'
+import { agruparPersonas, agruparAreasPersonas, usuariosDePersonas, balde, armarTop } from '../lib/organizacion.js'
 import { fInt, fMoney, fTarifa, fPct, fDelta, fCompact, titulo } from '../lib/format.js'
 
 const IC = {
@@ -40,6 +39,22 @@ function Var({ pct, alta, sinBase }) {
         <path d={sube ? 'M5 15l7-7 7 7' : baja ? 'M19 9l-7 7-7-7' : 'M5 12h14'} strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       {fDelta(pct, 1)}
+    </span>
+  )
+}
+
+// Anotacion compacta de cuanto subio o bajo en el ranking vs el periodo
+// previo. Subir puestos es mas consumo relativo, por eso va en rojo (misma
+// semantica que Var).
+function VarPuesto({ pos, posPrev }) {
+  if (posPrev == null) return null
+  const dif = posPrev - pos
+  if (dif === 0) return <span className="text-[10px] font-semibold text-slate-400">=</span>
+  const sube = dif > 0
+  return (
+    <span className={`text-[10px] font-bold ${sube ? 'text-rose-600' : 'text-emerald-600'}`}>
+      {sube ? '▲' : '▼'}
+      {Math.abs(dif)}
     </span>
   )
 }
@@ -95,7 +110,7 @@ export default function Kpi({ ctx }) {
   const etiquetaPrev = sinBase ? null : previo.label
 
 
-  // Los tres conceptos que componen el clic variable del contrato.
+  // Los tres conceptos que componen la impresión variable del contrato.
   const desglose = [
     {
       tipo: 'Monocromo (B/N)',
@@ -223,20 +238,11 @@ export default function Kpi({ ctx }) {
   )
 
 
-  const topAreas = useMemo(
-    () =>
-      armarTop(rankingAreas, {
-        id: (a) => a.clave,
-        etiqueta: (a) => titulo(a.clave),
-        valor: (a) => a.volumetria,
-        valorPrev: (a) => a.volPrev
-      }),
-    [rankingAreas]
-  )
-
-  // El top de usuarios es un ranking de personas, asi que deja fuera la fila
-  // tecnica de volumen sin auditoria (si existe, se explica en la tabla).
-  const topUsuarios = useMemo(() => {
+  // Puesto de cada usuario en el ranking general (actual y previo), para
+  // anotar "subio/bajo N puestos" en la tabla de abajo. Se calcula sobre el
+  // ranking completo, no solo sobre lo que se muestra en pantalla, igual que
+  // con el top de areas. Deja fuera la fila tecnica de volumen sin auditoria.
+  const posUsuarios = useMemo(() => {
     const mapaActual = new Map(usuariosVisibles.map((u) => [u.usuario, u]))
     const claves = [...new Set([...mapaActual.keys(), ...mapaUsuariosPrev.keys()])].filter((k) => k !== SIN_AUDITORIA)
     const items = claves.map((k) => ({
@@ -244,12 +250,17 @@ export default function Kpi({ ctx }) {
       actual: mapaActual.get(k) ?? null,
       prev: mapaUsuariosPrev.get(k) ?? null
     }))
-    return armarTop(items, {
-      id: (x) => x.usuario,
-      etiqueta: (x) => nombreUsuario(x.actual ?? x.prev ?? { usuario: x.usuario, nombre: '-' }),
-      valor: (x) => x.actual?.total ?? 0,
-      valorPrev: (x) => x.prev?.total ?? 0
-    })
+    const ranking = armarTop(
+      items,
+      {
+        id: (x) => x.usuario,
+        etiqueta: (x) => x.usuario,
+        valor: (x) => x.actual?.total ?? 0,
+        valorPrev: (x) => x.prev?.total ?? 0
+      },
+      Infinity
+    )
+    return new Map(ranking.map((r) => [r.id, { pos: r.pos, posPrev: r.posPrev }]))
   }, [usuariosVisibles, mapaUsuariosPrev])
 
   const personasAtribuidas = useMemo(
@@ -258,10 +269,28 @@ export default function Kpi({ ctx }) {
   )
 
 
-  const topAreasChart = rankingAreas
-    .filter((a) => a.volumetria > 0)
-    .slice(0, 12)
-    .map((a) => ({ ...a, corto: recorta(a.clave) }))
+  // Igual que armarTop: la posicion se calcula sobre el ranking completo (no
+  // solo los 12 que se grafican), asi la variacion de puesto es correcta aunque
+  // un area salga del top al caer de puesto.
+  const topAreasChart = useMemo(() => {
+    const conValor = rankingAreas.filter((a) => a.volumetria > 0)
+    const posActual = new Map([...conValor].sort((a, b) => b.volumetria - a.volumetria).map((a, i) => [a.clave, i + 1]))
+    const posPrevia = new Map(
+      rankingAreas
+        .filter((a) => a.volPrev > 0)
+        .sort((a, b) => b.volPrev - a.volPrev)
+        .map((a, i) => [a.clave, i + 1])
+    )
+    return [...conValor]
+      .sort((a, b) => b.volumetria - a.volumetria)
+      .slice(0, 12)
+      .map((a) => ({
+        ...a,
+        corto: recorta(a.clave),
+        pos: posActual.get(a.clave) ?? 0,
+        posPrev: posPrevia.get(a.clave) ?? null
+      }))
+  }, [rankingAreas])
 
 
   // Tabla de usuarios: general, o solo los del area elegida.
@@ -324,25 +353,44 @@ export default function Kpi({ ctx }) {
     return trabajosProrrateados(atribucion, ndd.porTrabajo, null, usuarioModal.usuario, periodosSel, tarifas)
   }, [usuarioModal, atribucion, ndd.porTrabajo, periodosSel, tarifas])
 
+  // Evolucion mes a mes de este usuario puntual, sobre el reparto historico
+  // completo (no el acotado al filtro de periodo vigente), asi el modal
+  // siempre puede mostrar sus meses anteriores.
+  const evolucionModal = useMemo(() => {
+    if (!usuarioModal) return null
+    const propias = repartoHistorico.asignado.filter((a) => a.usuario === usuarioModal.usuario)
+    return serieMensualAtribuida(propias, periodos, tarifas, catSerie)
+  }, [usuarioModal, repartoHistorico, periodos, tarifas, catSerie])
+
   const alcanceModal = [
     gerenciaActiva ? nombreGerencia(gerenciaActiva) : null,
     areaElegida ? titulo(areaElegida.area) : null
   ].filter(Boolean).join(' › ')
 
+  // Etiqueta del ranking de areas: paginas + cuantos puestos gano o perdio vs
+  // el periodo previo (misma logica de color que armarTop: subir puestos es
+  // mas consumo relativo, por eso va en rojo).
+  const EtiquetaAreaRank = ({ x, y, width, height, index }) => {
+    const a = topAreasChart[index]
+    if (!a) return null
+    const dif = !sinBase && a.posPrev != null ? a.posPrev - a.pos : null
+    return (
+      <text x={x + width + 8} y={y + height / 2} dy={4} fontSize={10} fontWeight={700} fill={C.text}>
+        {fInt(a.volumetria)}
+        {dif !== null &&
+          (dif === 0 ? (
+            <tspan fill={C.axis} fontWeight={600} fontSize={9}>{'  ='}</tspan>
+          ) : (
+            <tspan fill={dif > 0 ? ESTADO.grave : ESTADO.ok} fontWeight={700} fontSize={9}>
+              {`  ${dif > 0 ? '▲' : '▼'}${Math.abs(dif)}`}
+            </tspan>
+          ))}
+      </text>
+    )
+  }
 
   return (
     <>
-
-      <Fuente
-        tono="sds"
-        titulo={esGerencia ? `Consumo de ${alcance.etiqueta.replace('Gerencia · ', '')}` : 'Facturación · contador SDS'}
-        descripcion={
-          esGerencia
-            ? `Volumen facturado que corresponde a las ${alcance.personas} personas del padrón de esta gerencia. No incluye el consumo de otras gerencias ni el cargo fijo de los equipos, que es del parque y no de las personas.`
-            : 'Volumetría y costos que se cobran en el contrato. Todo este tablero toma el contador SDS como el 100%.'
-        }
-        etiqueta={esGerencia ? 'Alcance acotado' : 'Fuente SDS'}
-      />
 
       {/* 1 · Evolución histórica, con pestaña volumetría / facturación. */}
       <HistoricoLinea mensual={mensual} periodoActivo={filtros.periodo} esAcumulado={esAcumulado} />
@@ -352,11 +400,11 @@ export default function Kpi({ ctx }) {
         <Tile
           destacado
           icon={<Icono d={IC.dinero} />}
-          label={`${esGerencia ? 'Costo de clic' : 'Costo total'} ${esAcumulado ? 'acumulado' : (actual?.label ?? '')}`}
+          label={`${esGerencia ? 'Costo de Impresión' : 'Total Facturado'} ${esAcumulado ? 'acumulado' : (actual?.label ?? '')}`}
           value={fMoney(m.facturacion)}
           foot={
             sinBase ? (
-              <span className="text-[10px] text-white/80 font-medium">{esGerencia ? 'solo clic variable' : 'clic + cargo fijo'}</span>
+              <span className="text-[10px] text-white/80 font-medium">{esGerencia ? 'solo impresión variable' : 'impresión + cargo fijo'}</span>
             ) : (
               <Delta value={pct(m.facturacion, mPrev.facturacion)} suffix={`vs ${etiquetaPrev}`} />
             )
@@ -366,13 +414,13 @@ export default function Kpi({ ctx }) {
           icon={<Icono d={IC.bn} />}
           label="Costo B/N"
           value={fMoney(m.clicBN)}
-          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.clicVariable ? m.clicBN / m.clicVariable : 0)} del clic</span>}
+          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.clicVariable ? m.clicBN / m.clicVariable : 0)} de la impresión</span>}
         />
         <Tile
           icon={<Icono d={IC.color} />}
           label="Costo color"
           value={fMoney(m.clicColor)}
-          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)} del clic</span>}
+          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)} de la impresión</span>}
         />
         {esGerencia ? (
           <Tile
@@ -403,7 +451,7 @@ export default function Kpi({ ctx }) {
         />
       </section>
 
-      {/* 3 · Composición del clic variable: B/N, color estándar y color A3. */}
+      {/* 3 · Composición de la impresión variable: B/N, color estándar y color A3. */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {desglose.map((d) => (
           <div key={d.tipo} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
@@ -420,7 +468,7 @@ export default function Kpi({ ctx }) {
 
             <p className="text-2xl font-bold text-slate-900 num leading-none">{fMoney(d.costo)}</p>
             <p className="text-[10px] text-slate-500 num mt-1">
-              {fPct(d.pctCosto)} del clic variable
+              {fPct(d.pctCosto)} de la impresión variable
               {!sinBase && (
                 <>
                   {' · '}
@@ -443,7 +491,7 @@ export default function Kpi({ ctx }) {
               </span>
             </div>
 
-            {/* Proporción del costo dentro del clic variable. */}
+            {/* Proporción del costo dentro de la impresión variable. */}
             <div className="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${Math.max(1, d.pctCosto * 100)}%`, background: d.color }} />
             </div>
@@ -453,7 +501,7 @@ export default function Kpi({ ctx }) {
 
       <Nota tono="aviso" titulo="Peso real del color" icono="▸">
         El color es el <strong className="num">{fPct(m.pctVolColor)}</strong> del volumen pero el{' '}
-        <strong className="num">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)}</strong> del clic. La serie{' '}
+        <strong className="num">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)}</strong> de la impresión. La serie{' '}
         <strong>{tarifas.nombreA3}</strong> concentra <strong className="num">{fMoney(m.clicColorA3)}</strong> con solo{' '}
         {fInt(m.volColorA3)} páginas por la tarifa A3 de {fTarifa(tarifas.colorA3)}.
       </Nota>
@@ -470,34 +518,16 @@ export default function Kpi({ ctx }) {
         etiqueta={etiqueta}
       />
 
-      {/* 5 · Los dos top 5, con variación de consumo y de puesto. */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <TopRanking
-          title="Top 5 áreas"
-          subtitle={sinBase ? 'El periodo seleccionado no tiene mes previo con el cual comparar' : `Páginas facturadas en ${etiqueta}, contra ${etiquetaPrev}`}
-          right={<Badge tone="azul">{rankingAreas.filter((a) => a.volumetria > 0).length} áreas</Badge>}
-          filas={topAreas}
-          sinBase={sinBase}
-          onClic={alternarArea}
-          activo={areaSel}
-          vacio="Sin consumo facturado para los filtros aplicados."
-        />
-        <TopRanking
-          title="Top 5 usuarios"
-          subtitle={sinBase ? 'Reparto del volumen facturado entre los usuarios identificados' : `Volumen atribuido en ${etiqueta}, contra ${etiquetaPrev}`}
-          right={<Badge tone="azul">{personasAtribuidas} usuarios</Badge>}
-          filas={topUsuarios}
-          sinBase={sinBase}
-          vacio="Sin usuarios identificados para los filtros aplicados."
-        />
-      </section>
-
       {/* 5 · Ranking de áreas (clickeable) y variación contra el periodo previo. */}
       <section className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         <Card
           className="xl:col-span-6"
           title="Consumo por área · ranking"
-          subtitle={`Páginas facturadas por el contador SDS en ${etiqueta}. Clic en una barra para filtrar el detalle de abajo.`}
+          subtitle={
+            sinBase
+              ? `Páginas facturadas por el contador SDS en ${etiqueta}. Clic en una barra para filtrar el detalle de abajo.`
+              : `Páginas facturadas por el contador SDS en ${etiqueta}, con variación de puesto vs ${etiquetaPrev}. Clic en una barra para filtrar el detalle de abajo.`
+          }
           right={
             areaSel ? (
               <button
@@ -517,7 +547,7 @@ export default function Kpi({ ctx }) {
               <BarChart
                 data={topAreasChart}
                 layout="vertical"
-                margin={{ top: 4, right: 78, left: 4, bottom: 4 }}
+                margin={{ top: 4, right: 100, left: 4, bottom: 4 }}
                 className="cursor-pointer"
                 onClick={(estado) => {
                   const clave = estado?.activePayload?.[0]?.payload?.clave
@@ -542,7 +572,7 @@ export default function Kpi({ ctx }) {
                   {topAreasChart.map((a) => (
                     <Cell key={a.clave} fill={!areaSel || areaSel === a.clave ? C.blue : C.gray} />
                   ))}
-                  <LabelList dataKey="volumetria" position="right" formatter={fInt} style={{ fontSize: 10, fill: C.text, fontWeight: 700 }} />
+                  <LabelList content={<EtiquetaAreaRank />} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -648,7 +678,9 @@ export default function Kpi({ ctx }) {
         subtitle={
           areaElegida
             ? 'Solo los usuarios que imprimieron en las impresoras de esta área. Clic en una fila para ver el detalle de sus trabajos.'
-            : 'Quién concentra el volumen facturado. Clic en una fila para ver el detalle de sus trabajos.'
+            : sinBase
+              ? 'Quién concentra el volumen facturado. Clic en una fila para ver el detalle de sus trabajos.'
+              : `Quién concentra el volumen facturado, con variación de puesto vs ${etiquetaPrev}. Clic en una fila para ver el detalle de sus trabajos.`
         }
         right={
           <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
@@ -711,7 +743,20 @@ export default function Kpi({ ctx }) {
             { key: 'jobs', label: 'Trabajos', align: 'right', render: (r) => (r.usuario === SIN_AUDITORIA ? '—' : fInt(r.jobs)) },
             { key: 'mono', label: 'B/N', align: 'right', render: (r) => fInt(r.mono) },
             { key: 'color', label: 'Color', align: 'right', render: (r) => fInt(r.color) },
-            { key: 'total', label: 'Págs', align: 'right', render: (r) => <strong className="text-slate-900">{fInt(r.total)}</strong> },
+            {
+              key: 'total',
+              label: 'Págs',
+              align: 'right',
+              render: (r) => {
+                const p = !areaElegida && !sinBase ? posUsuarios.get(r.usuario) : null
+                return (
+                  <span className="inline-flex items-baseline gap-1.5 justify-end">
+                    <strong className="text-slate-900">{fInt(r.total)}</strong>
+                    {p && <VarPuesto pos={p.pos} posPrev={p.posPrev} />}
+                  </span>
+                )
+              }
+            },
             { key: 'pctTotal', label: '% del total', align: 'right', sortValue: (r) => r.total, render: (r) => fPct(totalBase ? r.total / totalBase : 0) },
             { key: 'costo', label: 'Costo', align: 'right', render: (r) => <span className="font-semibold text-mt-blue">{fMoney(r.costo)}</span> }
           ]}
@@ -750,8 +795,12 @@ export default function Kpi({ ctx }) {
 
       {usuarioModal && (
         <ModalTrabajos
+          key={usuarioModal.usuario}
           usuario={usuarioModal}
           trabajos={trabajosModal}
+          evolucion={evolucionModal}
+          periodoActivo={filtros.periodo}
+          esAcumulado={esAcumulado}
           alcance={alcanceModal}
           busqueda={busquedaTrabajo}
           onBusqueda={setBusquedaTrabajo}

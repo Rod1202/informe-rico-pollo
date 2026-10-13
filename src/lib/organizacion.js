@@ -186,6 +186,42 @@ export function usuariosDePersonas(asignado, padron, tarifas, { gerencia = null 
     .sort((a, b) => b.total - a.total)
 }
 
+// Convierte una lista con valor actual y valor previo en filas con su puesto
+// en el ranking (actual y previo), para anotar "subio/bajo N puestos" sobre
+// un listado ya ordenado por valor.
+export function armarTop(items, { id, etiqueta, valor, valorPrev }, limite = 5) {
+  const conValor = items.filter((x) => valor(x) > 0)
+
+  const posActual = new Map(
+    [...conValor].sort((a, b) => valor(b) - valor(a)).map((x, i) => [id(x), i + 1])
+  )
+  const posPrevia = new Map(
+    items
+      .filter((x) => valorPrev(x) > 0)
+      .sort((a, b) => valorPrev(b) - valorPrev(a))
+      .map((x, i) => [id(x), i + 1])
+  )
+
+  return [...conValor]
+    .sort((a, b) => valor(b) - valor(a))
+    .slice(0, limite)
+    .map((x) => {
+      const v = valor(x)
+      const vPrev = valorPrev(x)
+      return {
+        id: id(x),
+        etiqueta: etiqueta(x),
+        valor: v,
+        valorPrev: vPrev,
+        dif: v - vPrev,
+        pct: vPrev ? (v - vPrev) / vPrev : null,
+        nuevo: !vPrev,
+        pos: posActual.get(id(x)) ?? 0,
+        posPrev: posPrevia.get(id(x)) ?? null
+      }
+    })
+}
+
 // Usuarios de una gerencia segun el padron (para los PIN de acceso).
 export function usuariosDeDivision(padron, gerencia) {
   const out = new Set()

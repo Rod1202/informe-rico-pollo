@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceDot, LabelList } from 'recharts'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts'
 import { Card, Badge, Leyenda, TooltipBox } from './ui.jsx'
 import { C, CAT } from '../lib/palette.js'
 import { fInt, fMoney, fCompact, fDelta } from '../lib/format.js'
@@ -15,9 +15,9 @@ const EJES = {
     formato: fInt,
     eje: fCompact,
     series: [
-      { key: 'volumetria', label: 'Total', color: CAT[1], grosor: 2.6 },
-      { key: 'volBN', label: 'Monocromo (B/N)', color: CAT[0], grosor: 1.9 },
-      { key: 'volColor', label: 'Color', color: CAT[2], grosor: 1.9 }
+      { key: 'volumetria', label: 'Total', color: CAT[1] },
+      { key: 'volBN', label: 'Monocromo (B/N)', color: CAT[0] },
+      { key: 'volColor', label: 'Color', color: CAT[2] }
     ]
   },
   costo: {
@@ -28,12 +28,34 @@ const EJES = {
     formato: fMoney,
     eje: (v) => `$${fCompact(v)}`,
     series: [
-      { key: 'facturacion', label: 'Total facturado', color: CAT[1], grosor: 2.6 },
-      { key: 'clicBN', label: 'Clic B/N', color: CAT[0], grosor: 1.9 },
-      { key: 'clicColor', label: 'Clic color', color: CAT[2], grosor: 1.9 }
+      { key: 'facturacion', label: 'Total facturado', color: CAT[1] },
+      { key: 'clicBN', label: 'Impresión B/N', color: CAT[0] },
+      { key: 'clicColor', label: 'Impresión color', color: CAT[2] }
     ]
   }
 }
+
+// Ventana de tiempo que se muestra en el grafico. Cuenta meses desde el mas
+// reciente hacia atras, asi que no rompe nada si todavia no hay esa cantidad
+// de historia cargada.
+const RANGOS = [
+  { id: '3m', tab: '3 meses', meses: 3 },
+  { id: '6m', tab: '6 meses', meses: 6 },
+  { id: '12m', tab: '1 año', meses: 12 }
+]
+
+const IconApilado = () => (
+  <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+    <rect x="3" y="2" width="10" height="5" rx="1" opacity="0.45" />
+    <rect x="3" y="8" width="10" height="6" rx="1" />
+  </svg>
+)
+const IconSeparado = () => (
+  <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="currentColor">
+    <rect x="2" y="6" width="5" height="8" rx="1" />
+    <rect x="9" y="3" width="5" height="11" rx="1" opacity="0.6" />
+  </svg>
+)
 
 export default function HistoricoLinea({
   mensual,
@@ -45,9 +67,14 @@ export default function HistoricoLinea({
   vacio = 'Sin periodos con datos para los filtros aplicados.'
 }) {
   const [eje, setEje] = useState('volumen')
+  const [rango, setRango] = useState('12m')
+  const [modo, setModo] = useState('apilado')
   const cfg = EJES[eje]
+  const rangoCfg = RANGOS.find((r) => r.id === rango) ?? RANGOS[2]
+  const [total, bn, color] = cfg.series
+  const separado = modo === 'separado'
 
-  const datos = mensual.serie
+  const historico = mensual.serie
     .filter((s) => s.tiene)
     .map((s) => ({
       label: s.label,
@@ -66,7 +93,10 @@ export default function HistoricoLinea({
       equiposBackup: s.equiposBackup
     }))
 
-  const clavePrincipal = cfg.series[0].key
+  // El rango recorta desde el mes mas reciente hacia atras.
+  const datos = historico.slice(-rangoCfg.meses)
+
+  const clavePrincipal = total.key
   const activo = esAcumulado ? null : datos.find((d) => d.periodo === periodoActivo)
   const ultimo = datos[datos.length - 1] ?? null
   const previo = datos.length > 1 ? datos[datos.length - 2] : null
@@ -75,16 +105,56 @@ export default function HistoricoLinea({
       ? (ultimo[clavePrincipal] - previo[clavePrincipal]) / previo[clavePrincipal]
       : null
 
+  // El periodo activo queda a opacidad plena; el resto del historico baja un
+  // poco para que resalte sin perderse de vista.
+  const opacidad = (d) => (!activo || d.label === activo.label ? 1 : 0.42)
+
+  const EtiquetaMes = ({ x, y, payload }) => {
+    const esActivo = activo?.label === payload.value
+    return (
+      <text x={x} y={y} dy={14} textAnchor="middle" fontSize={11} fontWeight={esActivo ? 800 : 600} fill={esActivo ? C.blue : C.text}>
+        {payload.value}
+      </text>
+    )
+  }
+
+  const EtiquetaFin = ({ x, y, width, index }) => {
+    const d = datos[index]
+    if (!d) return null
+    return (
+      <text x={x + width / 2} y={y - 6} textAnchor="middle" fontSize={11} fontWeight={700} fill={C.text}>
+        {cfg.formato(d[clavePrincipal])}
+        <tspan fill={C.axis} fontWeight={600} fontSize={9}>{` · ${d.equipos} eq.`}</tspan>
+      </text>
+    )
+  }
+
   return (
     <Card
       title={title}
       subtitle={
         subtitle ??
-        `Histórico mes a mes del contrato, en ${cfg.unidad}. El punto marcado es el periodo seleccionado en el encabezado.`
+        `Histórico mes a mes del contrato, en ${cfg.unidad}. La barra resaltada es el periodo seleccionado en el encabezado.`
       }
       right={
-        <div className="flex items-center gap-2 shrink-0">
-          <Badge tone="azul">{etiqueta ?? `${datos.length} meses`}</Badge>
+        <div className="flex items-center gap-2 flex-wrap justify-end max-w-full">
+          <Badge tone="azul">{etiqueta ?? `${datos.length} ${datos.length === 1 ? 'mes' : 'meses'}`}</Badge>
+          <div className="flex items-center bg-slate-100/90 rounded-full p-1 border border-slate-200 text-[11px]">
+            {RANGOS.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setRango(r.id)}
+                className={`px-3 py-1 rounded-full transition-colors ${
+                  rango === r.id
+                    ? 'bg-white text-mt-blue font-bold border border-slate-200/60 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {r.tab}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center bg-slate-100/90 rounded-full p-1 border border-slate-200 text-[11px]">
             {Object.values(EJES).map((o) => (
               <button
@@ -108,25 +178,23 @@ export default function HistoricoLinea({
         <p className="text-xs text-slate-400 py-10 text-center">{vacio}</p>
       ) : (
         <>
-          <div className="h-[260px]">
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={datos} margin={{ top: 30, right: 18, left: -6, bottom: 4 }}>
+              <BarChart data={datos} margin={{ top: 26, right: 10, left: -6, bottom: 4 }} barCategoryGap="30%" barGap={4}>
                 <CartesianGrid stroke={C.grid} vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.text, fontWeight: 600 }} axisLine={false} tickLine={false} />
-                <YAxis
-                  tick={{ fontSize: 9, fill: C.axis }}
-                  tickFormatter={cfg.eje}
-                  axisLine={false}
-                  tickLine={false}
-                  width={56}
-                />
+                <XAxis dataKey="label" tick={<EtiquetaMes />} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: C.axis }} tickFormatter={cfg.eje} axisLine={false} tickLine={false} width={54} />
                 <Tooltip
-                  cursor={{ stroke: C.gray, strokeDasharray: '3 3' }}
+                  cursor={{ fill: 'rgba(0,102,255,0.05)' }}
                   content={
                     <TooltipBox
                       formato={cfg.formato}
                       pie={(d) => (
                         <>
+                          <p className="flex items-center gap-2 text-slate-500 text-[11px]">
+                            <span className="flex-1">{total.label}</span>
+                            <span className="font-semibold text-slate-800 num">{cfg.formato(d?.[clavePrincipal] ?? 0)}</span>
+                          </p>
                           <p className="flex items-center gap-2 text-slate-500 text-[11px]">
                             <span className="flex-1">Equipos en el parque</span>
                             <span className="font-semibold text-slate-800 num">{fInt(d?.equipos ?? 0)}</span>
@@ -146,48 +214,65 @@ export default function HistoricoLinea({
                     />
                   }
                 />
-                {activo && <ReferenceLine x={activo.label} stroke={C.blue} strokeDasharray="4 4" strokeOpacity={0.55} />}
-                {cfg.series.map((s, i) => (
-                  <Line
-                    key={s.key}
-                    type="monotone"
-                    dataKey={s.key}
-                    name={s.label}
-                    stroke={s.color}
-                    strokeWidth={s.grosor}
-                    dot={{ r: 3, fill: '#fff', stroke: s.color, strokeWidth: 2 }}
-                    activeDot={{ r: 5 }}
-                  >
-                    {/* El parque va sobre la linea del total, no sobre cada serie. */}
-                    {i === 0 && (
-                      <LabelList
-                        dataKey="equipos"
-                        position="top"
-                        offset={12}
-                        formatter={(v) => `${v} eq.`}
-                        style={{ fontSize: 9, fill: C.axis, fontWeight: 700 }}
-                      />
-                    )}
-                  </Line>
-                ))}
-                {activo && (
-                  <ReferenceDot
-                    x={activo.label}
-                    y={activo[clavePrincipal]}
-                    r={6}
-                    fill={C.blue}
-                    stroke="#fff"
-                    strokeWidth={2}
-                    isFront
-                  />
-                )}
-              </LineChart>
+                <Bar
+                  dataKey={bn.key}
+                  name={bn.label}
+                  stackId={separado ? undefined : 'hist'}
+                  radius={separado ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                  maxBarSize={separado ? 30 : 64}
+                >
+                  {datos.map((d) => (
+                    <Cell key={d.label} fill={bn.color} fillOpacity={opacidad(d)} />
+                  ))}
+                  {separado && (
+                    <LabelList dataKey={bn.key} position="top" formatter={cfg.formato} style={{ fontSize: 9, fontWeight: 700, fill: C.text }} />
+                  )}
+                </Bar>
+                <Bar
+                  dataKey={color.key}
+                  name={color.label}
+                  stackId={separado ? undefined : 'hist'}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={separado ? 30 : 64}
+                >
+                  {datos.map((d) => (
+                    <Cell key={d.label} fill={color.color} fillOpacity={opacidad(d)} />
+                  ))}
+                  {separado ? (
+                    <LabelList dataKey={color.key} position="top" formatter={cfg.formato} style={{ fontSize: 9, fontWeight: 700, fill: C.text }} />
+                  ) : (
+                    <LabelList content={<EtiquetaFin />} />
+                  )}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           </div>
 
           <div className="flex items-center justify-between gap-3 flex-wrap mt-1 pt-2 border-t border-slate-100">
             <span className="flex items-center gap-3 flex-wrap">
-              <Leyenda items={cfg.series.map((s) => ({ label: s.label, color: s.color }))} />
+              <Leyenda items={[bn, color].map((s) => ({ label: s.label, color: s.color }))} />
+              <div className="flex items-center bg-slate-100/90 rounded-full p-1 border border-slate-200">
+                <button
+                  type="button"
+                  title="Barras apiladas"
+                  onClick={() => setModo('apilado')}
+                  className={`flex items-center justify-center w-7 h-6 rounded-full transition-colors ${
+                    !separado ? 'bg-white text-mt-blue shadow-sm border border-slate-200/60' : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <IconApilado />
+                </button>
+                <button
+                  type="button"
+                  title="Barras separadas"
+                  onClick={() => setModo('separado')}
+                  className={`flex items-center justify-center w-7 h-6 rounded-full transition-colors ${
+                    separado ? 'bg-white text-mt-blue shadow-sm border border-slate-200/60' : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <IconSeparado />
+                </button>
+              </div>
               <span className="text-[10px] text-slate-400">
                 <strong className="text-slate-500">n eq.</strong> = equipos con contador ese mes
               </span>

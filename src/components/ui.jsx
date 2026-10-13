@@ -6,7 +6,7 @@ export function Card({ title, subtitle, right, children, className = '', bodyCla
   return (
     <section className={`card p-5 flex flex-col ${className}`}>
       {(title || right) && (
-        <header className="flex items-start justify-between gap-3 mb-3">
+        <header className="flex items-start justify-between gap-3 mb-3 flex-wrap">
           <div className="min-w-0">
             {title && <h3 className="card-t">{title}</h3>}
             {subtitle && <p className="card-s mt-0.5">{subtitle}</p>}

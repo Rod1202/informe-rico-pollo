@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import { Tabla, Buscador, normaliza } from './ui.jsx'
+import HistoricoLinea from './HistoricoLinea.jsx'
 import { fInt, fMoney, fPct, titulo } from '../lib/format.js'
 
 const nombreDe = (u) => (u?.nombre && u.nombre !== '-' ? u.nombre : u?.usuario ?? '—')
@@ -11,7 +12,17 @@ const iniciales = (u) => {
 
 // Detalle de los trabajos de un usuario. Vive fuera de las tarjetas para poder
 // abrirse desde cualquier lista de usuarios sin duplicar la tabla.
-export default function ModalTrabajos({ usuario, trabajos, alcance = '', onCerrar, busqueda, onBusqueda }) {
+export default function ModalTrabajos({
+  usuario,
+  trabajos,
+  evolucion = null,
+  periodoActivo = null,
+  esAcumulado = false,
+  alcance = '',
+  onCerrar,
+  busqueda,
+  onBusqueda
+}) {
   const cajaRef = useRef(null)
 
   // Esc cierra, y mientras esta abierto el fondo no scrollea.
@@ -102,6 +113,18 @@ export default function ModalTrabajos({ usuario, trabajos, alcance = '', onCerra
         </div>
 
         <div className="p-4 overflow-auto">
+          {evolucion && (
+            <div className="mb-4">
+              <HistoricoLinea
+                mensual={evolucion}
+                periodoActivo={periodoActivo}
+                esAcumulado={esAcumulado}
+                title="Evolución mensual"
+                subtitle="Páginas atribuidas a este usuario mes a mes, según el reparto NDD sobre el contador SDS."
+                vacio="Este usuario no tiene historial impreso en otros meses."
+              />
+            </div>
+          )}
           {!trabajos.length ? (
             <p className="text-xs text-slate-400 py-10 text-center">
               Este usuario no tiene trabajos con detalle en NDD para el periodo seleccionado.

@@ -6,13 +6,16 @@ import ModalTrabajos from '../components/ModalTrabajos.jsx'
 import { C, CAT, ESTADO } from '../lib/palette.js'
 import { nddAgrupar } from '../lib/measures.js'
 import { trabajosProrrateados } from '../lib/prorrateo.js'
+import { serieMensualAtribuida } from '../lib/gerencia.js'
 import { fInt, fMoney, fTarifa, fPct, fCompact, fFecha, fSigned, titulo } from '../lib/format.js'
 
 export default function Auditoria({ ctx }) {
   const {
     m, auditoria, ndd, periodos, periodosSel, periodosInfo, meta, mensual, tarifas,
-    atribucion, areasAtribuidas
+    atribucion, areasAtribuidas, catalogoSeries, repartoHistorico, filtros, esAcumulado
   } = ctx
+
+  const catSerie = useMemo(() => new Map(catalogoSeries.map((c) => [c.serie, c])), [catalogoSeries])
 
   // Mismo detalle de trabajos que en Gerencia, en ventana flotante.
   const [usuarioModal, setUsuarioModal] = useState(null)
@@ -25,6 +28,15 @@ export default function Auditoria({ ctx }) {
     () => (usuarioModal ? trabajosProrrateados(atribucion, ndd.porTrabajo, null, usuarioModal.usuario, periodosSel, tarifas) : []),
     [usuarioModal, atribucion, ndd.porTrabajo, periodosSel, tarifas]
   )
+
+  // Evolucion mes a mes de este usuario sobre el reparto historico completo,
+  // igual que en Gerencia: el modal siempre puede mostrar sus meses anteriores
+  // aunque el filtro de periodo vigente sea de un solo mes.
+  const evolucionModal = useMemo(() => {
+    if (!usuarioModal) return null
+    const propias = repartoHistorico.asignado.filter((a) => a.usuario === usuarioModal.usuario)
+    return serieMensualAtribuida(propias, periodos, tarifas, catSerie)
+  }, [usuarioModal, repartoHistorico, periodos, tarifas, catSerie])
 
   const comparativo = useMemo(
     () =>
@@ -72,8 +84,8 @@ export default function Auditoria({ ctx }) {
               { l: 'Dif. contador B/N', v: fInt(m.difContadorBN), ok: m.difContadorBN === 0 },
               { l: 'Dif. contador color', v: fInt(m.difContadorColor), ok: m.difContadorColor === 0 },
               { l: 'Equipos con descuadre', v: String(m.equiposInconsistencia), ok: m.equiposInconsistencia === 0 },
-              { l: 'Clic variable calculado', v: fMoney(m.clicVariable), ok: true },
-              { l: 'Dif. clic vs origen', v: fMoney(m.difClicOrigen), ok: clicOk }
+              { l: 'Impresión variable calculada', v: fMoney(m.clicVariable), ok: true },
+              { l: 'Dif. impresión vs origen', v: fMoney(m.difClicOrigen), ok: clicOk }
             ].map((k) => (
               <div key={k.l} className={`rounded-xl border p-3 ${k.ok ? 'border-slate-200 bg-slate-50' : 'border-rose-200 bg-rose-50'}`}>
                 <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{k.l}</p>
@@ -96,8 +108,8 @@ export default function Auditoria({ ctx }) {
                 { key: 'difContadorBN', label: 'Dif. B/N', align: 'right', render: (r) => fInt(r.difContadorBN) },
                 { key: 'difContadorColor', label: 'Dif. color', align: 'right', render: (r) => fInt(r.difContadorColor) },
                 { key: 'equiposInconsistencia', label: 'Descuadres', align: 'right' },
-                { key: 'clicVariable', label: 'Clic calculado', align: 'right', render: (r) => fMoney(r.clicVariable) },
-                { key: 'clicOrigen', label: 'Clic origen', align: 'right', render: (r) => fMoney(r.clicOrigen) },
+                { key: 'clicVariable', label: 'Impresión calculada', align: 'right', render: (r) => fMoney(r.clicVariable) },
+                { key: 'clicOrigen', label: 'Impresión origen', align: 'right', render: (r) => fMoney(r.clicOrigen) },
                 {
                   key: 'difClicOrigen',
                   label: 'Diferencia',
@@ -277,8 +289,12 @@ export default function Auditoria({ ctx }) {
 
       {usuarioModal && (
         <ModalTrabajos
+          key={usuarioModal.usuario}
           usuario={usuarioModal}
           trabajos={trabajosModal}
+          evolucion={evolucionModal}
+          periodoActivo={filtros.periodo}
+          esAcumulado={esAcumulado}
           busqueda={busquedaTrabajo}
           onBusqueda={setBusquedaTrabajo}
           onCerrar={() => setUsuarioModal(null)}

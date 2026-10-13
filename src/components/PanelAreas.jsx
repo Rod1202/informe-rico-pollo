@@ -179,7 +179,7 @@ export default function PanelAreas({
               { l: 'Monocromo / color', v: `${fInt(areaActiva.mono)} / ${fInt(areaActiva.color)}`, s: `${fPct(areaActiva.total ? areaActiva.color / areaActiva.total : 0)} en color` },
               { l: 'Usuarios atribuidos', v: fInt(areaActiva.usuarios.filter((u) => !esSinAuditoria(u)).length), s: `${areaActiva.equipos} equipo(s)` },
               { l: 'Trabajos enviados', v: fInt(areaActiva.jobs), s: areaActiva.jobs ? `${fInt(areaActiva.total / areaActiva.jobs)} págs por trabajo` : 'sin registro NDD' },
-              { l: 'Costo de clic', v: fMoney(areaActiva.costo), s: 'tarifas de contrato', destacado: true }
+              { l: 'Costo de impresión', v: fMoney(areaActiva.costo), s: 'tarifas de contrato', destacado: true }
             ].map((k) => (
               <div
                 key={k.l}

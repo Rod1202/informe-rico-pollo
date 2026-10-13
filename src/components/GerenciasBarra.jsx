@@ -121,7 +121,7 @@ export default function GerenciasBarra({
                       pie={(d) => (
                         <>
                           <p className="flex items-center gap-2 text-slate-500 text-[11px]">
-                            <span className="flex-1">Costo de clic</span>
+                            <span className="flex-1">Costo de Impresión</span>
                             <span className="font-semibold text-slate-800 num">{fMoney(d?.facturacion ?? 0)}</span>
                           </p>
                           <p className="flex items-center gap-2 text-slate-500 text-[11px]">
