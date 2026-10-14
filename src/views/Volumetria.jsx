@@ -120,7 +120,7 @@ export default function Volumetria({ ctx }) {
                   />
                 </div>
                 <span className="w-16 text-right text-[11px] font-semibold text-slate-700 num">{fInt(a.volumetria)}</span>
-                <span className="w-12 text-right text-[10px] text-slate-400 num">{fPct(a.pctParticipacionVol, 0)}</span>
+                <span className="w-12 text-right text-[10px] text-slate-400 num">{fPct(a.pctParticipacionVol)}</span>
               </div>
             ))}
           </div>
@@ -171,7 +171,7 @@ export default function Volumetria({ ctx }) {
             { key: 'bn', label: 'B/N', align: 'right', render: (r) => fInt(r.bn) },
             { key: 'color', label: 'Color', align: 'right', render: (r) => fInt(r.color) },
             { key: 'total', label: 'Total págs', align: 'right', render: (r) => <strong>{fInt(r.total)}</strong> },
-            { key: 'participacion', label: '% part.', align: 'right', render: (r) => fPct(r.participacion, 2) },
+            { key: 'participacion', label: '% part.', align: 'right', render: (r) => fPct(r.participacion) },
             { key: 'base', label: 'Cargo fijo', align: 'right', render: (r) => fMoney(r.base) },
             { key: 'facturacion', label: 'Facturado', align: 'right', render: (r) => fMoney(r.facturacion) },
             {

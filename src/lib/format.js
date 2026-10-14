@@ -9,12 +9,15 @@ export const fInt = (v) => nfInt.format(Math.round(v || 0))
 export const fMoney = (v) => `$${nf2.format(v || 0)}`
 export const fMoney3 = (v) => `$${nf3.format(v || 0)}`
 export const fTarifa = (v) => `$${nfTarifa.format(v || 0)}`
-export const fPct = (v, d = 1) => `${(d === 0 ? nfInt : nf1).format((v || 0) * 100)}%`
+// El informe muestra 2 decimales en todo porcentaje. `d` sigue disponible para
+// los pocos lugares que piden otra precision.
+const nfPct = (d) => (d === 0 ? nfInt : d === 1 ? nf1 : nf2)
+export const fPct = (v, d = 2) => `${nfPct(d).format((v || 0) * 100)}%`
 export const fPct2 = (v) => `${nf2.format((v || 0) * 100)}%`
-export const fDelta = (v, d = 1) => {
+export const fDelta = (v, d = 2) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—'
   const s = v > 0 ? '+' : ''
-  return `${s}${(d === 0 ? nfInt : nf1).format(v * 100)}%`
+  return `${s}${nfPct(d).format(v * 100)}%`
 }
 export const fSigned = (v, fmt = fInt) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt(Math.abs(v))}`
 export const fCompact = (v) => {

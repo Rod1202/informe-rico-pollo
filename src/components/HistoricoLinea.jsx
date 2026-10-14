@@ -214,43 +214,44 @@ export default function HistoricoLinea({
                     />
                   }
                 />
-                <Bar
-                  dataKey={bn.key}
-                  name={bn.label}
-                  stackId={separado ? undefined : 'hist'}
-                  radius={separado ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                  maxBarSize={separado ? 30 : 64}
-                >
-                  {datos.map((d) => (
-                    <Cell key={d.label} fill={bn.color} fillOpacity={opacidad(d)} />
-                  ))}
-                  {separado && (
-                    <LabelList dataKey={bn.key} position="top" formatter={cfg.formato} style={{ fontSize: 9, fontWeight: 700, fill: C.text }} />
-                  )}
-                </Bar>
-                <Bar
-                  dataKey={color.key}
-                  name={color.label}
-                  stackId={separado ? undefined : 'hist'}
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={separado ? 30 : 64}
-                >
-                  {datos.map((d) => (
-                    <Cell key={d.label} fill={color.color} fillOpacity={opacidad(d)} />
-                  ))}
-                  {separado ? (
-                    <LabelList dataKey={color.key} position="top" formatter={cfg.formato} style={{ fontSize: 9, fontWeight: 700, fill: C.text }} />
-                  ) : (
-                    <LabelList content={<EtiquetaFin />} />
-                  )}
-                </Bar>
+                {/* Separado: color, monocromo y total, en ese orden. Apilado:
+                    solo los dos componentes, porque su suma ya es el total. */}
+                {separado ? (
+                  [color, bn, total].map((s) => (
+                    <Bar key={s.key} dataKey={s.key} name={s.label} radius={[4, 4, 0, 0]} maxBarSize={26}>
+                      {datos.map((d) => (
+                        <Cell key={d.label} fill={s.color} fillOpacity={opacidad(d)} />
+                      ))}
+                      <LabelList
+                        dataKey={s.key}
+                        position="top"
+                        formatter={cfg.formato}
+                        style={{ fontSize: 9, fontWeight: 700, fill: C.text }}
+                      />
+                    </Bar>
+                  ))
+                ) : (
+                  <>
+                    <Bar dataKey={bn.key} name={bn.label} stackId="hist" radius={[0, 0, 0, 0]} maxBarSize={64}>
+                      {datos.map((d) => (
+                        <Cell key={d.label} fill={bn.color} fillOpacity={opacidad(d)} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey={color.key} name={color.label} stackId="hist" radius={[4, 4, 0, 0]} maxBarSize={64}>
+                      {datos.map((d) => (
+                        <Cell key={d.label} fill={color.color} fillOpacity={opacidad(d)} />
+                      ))}
+                      <LabelList content={<EtiquetaFin />} />
+                    </Bar>
+                  </>
+                )}
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           <div className="flex items-center justify-between gap-3 flex-wrap mt-1 pt-2 border-t border-slate-100">
             <span className="flex items-center gap-3 flex-wrap">
-              <Leyenda items={[bn, color].map((s) => ({ label: s.label, color: s.color }))} />
+              <Leyenda items={(separado ? [color, bn, total] : [bn, color]).map((s) => ({ label: s.label, color: s.color }))} />
               <div className="flex items-center bg-slate-100/90 rounded-full p-1 border border-slate-200">
                 <button
                   type="button"
@@ -286,7 +287,7 @@ export default function HistoricoLinea({
                     <>
                       {' '}
                       <span className={varUltimo > 0 ? 'text-rose-600 font-semibold' : 'text-emerald-600 font-semibold'}>
-                        {fDelta(varUltimo, 1)}
+                        {fDelta(varUltimo)}
                       </span>{' '}
                       vs {previo.label}
                     </>

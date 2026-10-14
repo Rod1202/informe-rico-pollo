@@ -173,7 +173,7 @@ export default function Auditoria({ ctx }) {
           subtitle="Misma unidad (páginas) en una sola escala"
           right={
             <Semaforo estado={Math.abs(auditoria.totales.pctBrecha ?? 0) < 0.05 ? 'ok' : 'aviso'}>
-              Brecha {auditoria.totales.pctBrecha === null ? '—' : fPct(auditoria.totales.pctBrecha, 0)}
+              Brecha {auditoria.totales.pctBrecha === null ? '—' : fPct(auditoria.totales.pctBrecha)}
             </Semaforo>
           }
         >
@@ -253,7 +253,7 @@ export default function Auditoria({ ctx }) {
               sortValue: (r) => Math.abs(r.brecha),
               render: (r) => <span className={r.brecha === 0 ? '' : r.brecha > 0 ? 'text-slate-900 font-semibold' : 'text-rose-600 font-semibold'}>{fSigned(r.brecha)}</span>
             },
-            { key: 'pctBrecha', label: '% brecha', align: 'right', render: (r) => (r.pctBrecha === null ? '—' : fPct(r.pctBrecha, 0)) },
+            { key: 'pctBrecha', label: '% brecha', align: 'right', render: (r) => (r.pctBrecha === null ? '—' : fPct(r.pctBrecha)) },
             {
               key: 'origen',
               label: 'Origen',
@@ -275,7 +275,7 @@ export default function Auditoria({ ctx }) {
             nddTotal: fInt(auditoria.totales.nddTotal),
             jobs: fInt(auditoria.totales.jobs),
             brecha: fSigned(auditoria.totales.brecha),
-            pctBrecha: auditoria.totales.pctBrecha === null ? '—' : fPct(auditoria.totales.pctBrecha, 0)
+            pctBrecha: auditoria.totales.pctBrecha === null ? '—' : fPct(auditoria.totales.pctBrecha)
           }}
         />
       </Card>
@@ -326,7 +326,7 @@ export default function Auditoria({ ctx }) {
                   <div className="flex justify-between text-[11px] mb-1">
                     <span className="font-semibold text-slate-700">{d.clave}</span>
                     <span className="text-slate-500 num">
-                      {fInt(d.jobs)} trabajos · {fPct(d.jobs / totJobs, 0)}
+                      {fInt(d.jobs)} trabajos · {fPct(d.jobs / totJobs)}
                     </span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">

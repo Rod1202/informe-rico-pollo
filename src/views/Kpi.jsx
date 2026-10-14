@@ -2,7 +2,9 @@ import React, { useCallback, useMemo, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, Cell } from 'recharts'
 import { Card, Kpi as Tile, Tabla, Badge, Delta, TooltipBox, Nota, Buscador, normaliza } from '../components/ui.jsx'
 import HistoricoLinea from '../components/HistoricoLinea.jsx'
-import GerenciasBarra, { nombreGerencia } from '../components/GerenciasBarra.jsx'
+import GerenciasBarra, { nombreGerencia, altoGerencias } from '../components/GerenciasBarra.jsx'
+import TablaVariacion from '../components/TablaVariacion.jsx'
+import DetalleImpresora from '../components/DetalleImpresora.jsx'
 import ModalTrabajos from '../components/ModalTrabajos.jsx'
 import { C, CAT, ESTADO } from '../lib/palette.js'
 import { filtrar, medidas, periodoPrevio } from '../lib/measures.js'
@@ -25,23 +27,6 @@ const Icono = ({ d }) => (
 )
 
 
-function Var({ pct, alta, sinBase }) {
-  if (sinBase) return <span className="text-[10px] text-slate-400 font-medium">sin mes previo</span>
-  if (alta) return <Badge tone="azul">nuevo</Badge>
-  if (pct === null || pct === undefined || !Number.isFinite(pct)) return <span className="text-slate-300">—</span>
-  const sube = pct > 0.0005
-  const baja = pct < -0.0005
-
-  const tono = sube ? 'text-rose-600' : baja ? 'text-emerald-600' : 'text-slate-500'
-  return (
-    <span className={`inline-flex items-center gap-0.5 font-semibold ${tono}`}>
-      <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-        <path d={sube ? 'M5 15l7-7 7 7' : baja ? 'M19 9l-7 7-7-7' : 'M5 12h14'} strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      {fDelta(pct, 1)}
-    </span>
-  )
-}
 
 // Anotacion compacta de cuanto subio o bajo en el ranking vs el periodo
 // previo. Subir puestos es mas consumo relativo, por eso va en rojo (misma
@@ -61,11 +46,11 @@ function VarPuesto({ pos, posPrev }) {
 
 
 const DIMENSIONES = [
+  { id: 'gerencia', l: 'Gerencia', col: 'Gerencia (padrón)' },
   { id: 'area', l: 'Área', col: 'Área (padrón)' },
   { id: 'dpto', l: 'Depto.', col: 'Departamento (padrón)' },
   { id: 'ubicacion', l: 'Ubicación', col: 'Ubicación del equipo' },
-  { id: 'sede', l: 'Sede', col: 'Sede' },
-  { id: 'serie', l: 'Impresora', col: 'Serie / área' }
+  { id: 'sede', l: 'Sede', col: 'Sede' }
 ]
 
 
@@ -114,6 +99,7 @@ export default function Kpi({ ctx }) {
   const desglose = [
     {
       tipo: 'Monocromo (B/N)',
+      grupo: 'bn',
       detalle: `${fTarifa(tarifas.bn)} por página`,
       icono: IC.bn,
       pags: m.volBN, costo: m.clicBN, pagsPrev: mPrev.volBN, costoPrev: mPrev.clicBN,
@@ -121,6 +107,7 @@ export default function Kpi({ ctx }) {
     },
     {
       tipo: 'Color estándar',
+      grupo: 'color',
       detalle: `${fTarifa(tarifas.color)} por página`,
       icono: IC.color,
       pags: m.volColorStd, costo: m.clicColorStd, pagsPrev: mPrev.volColorStd, costoPrev: mPrev.clicColorStd,
@@ -128,6 +115,7 @@ export default function Kpi({ ctx }) {
     },
     {
       tipo: 'Color A3 adicional',
+      grupo: 'color',
       detalle: `${fTarifa(tarifas.colorA3)} · solo ${tarifas.nombreA3}`,
       icono: IC.color,
       pags: m.volColorA3, costo: m.clicColorA3, pagsPrev: mPrev.volColorA3, costoPrev: mPrev.clicColorA3,
@@ -136,14 +124,14 @@ export default function Kpi({ ctx }) {
   ].map((d) => ({
     ...d,
     pctPags: m.volumetria ? d.pags / m.volumetria : 0,
-    pctCosto: m.clicVariable ? d.costo / m.clicVariable : 0,
+    pctCosto: m.facturacion ? d.costo / m.facturacion : 0,
     varCosto: pct(d.costo, d.costoPrev),
     varPags: pct(d.pags, d.pagsPrev)
   }))
 
 
   // Ranking SDS por dimension, y el de areas que manda el resto de la vista.
-  const [dimension, setDimension] = useState('area')
+  const [dimension, setDimension] = useState('gerencia')
   const dimActiva = DIMENSIONES.find((d) => d.id === dimension) ?? DIMENSIONES[0]
   const catSerie = useMemo(() => new Map(catalogoSeries.map((c) => [c.serie, c])), [catalogoSeries])
   // Reparto del periodo anterior sin acotar: lo usan el grafico de gerencias y
@@ -170,6 +158,12 @@ export default function Kpi({ ctx }) {
 
   // Gerencia seleccionada en el grafico de barras. Es el primer nivel de la
   // jerarquia Gerencia -> Area -> Ubicacion, y acota todo lo que viene abajo.
+  // Las tarjetas de detalle del clic se despliegan desde su KPI: B/N abre el
+  // monocromo, Color abre el estandar y el A3.
+  const [detalleClic, setDetalleClic] = useState(null)
+  const alternarDetalle = useCallback((k) => setDetalleClic((p) => (p === k ? null : k)), [])
+
+  const [serieSel, setSerieSel] = useState(null)
   const [gerenciaSel, setGerenciaSel] = useState(null)
   const [areaSel, setAreaSel] = useState(null)
   const alternarArea = useCallback((a) => setAreaSel((prev) => (prev === a ? null : a)), [])
@@ -219,7 +213,7 @@ export default function Kpi({ ctx }) {
 
   // Area y departamento salen de la persona; ubicacion y serie, del equipo.
   const rankingDim = useMemo(() => {
-    if (dimension === 'area' || dimension === 'dpto') {
+    if (dimension === 'gerencia' || dimension === 'area' || dimension === 'dpto') {
       return agruparPersonas(asignadoVista, asignadoVistaPrev, padron, dimension, tarifas)
     }
     const r = compararAtribuido(asignadoVista, asignadoVistaPrev, dimension, tarifas, catSerie)
@@ -229,6 +223,14 @@ export default function Kpi({ ctx }) {
   const rankingAreas = useMemo(
     () => agruparPersonas(asignadoVista, asignadoVistaPrev, padron, 'area', tarifas),
     [asignadoVista, asignadoVistaPrev, padron, tarifas]
+  )
+
+  // Las impresoras tienen su propio card, con su propio drill a gerencias.
+  const rankingSeries = useMemo(
+    () =>
+      compararAtribuido(asignadoVista, asignadoVistaPrev, 'serie', tarifas, catSerie)
+        .filter((x) => x.volumetria > 0 || x.volPrev > 0),
+    [asignadoVista, asignadoVistaPrev, tarifas, catSerie]
   )
 
 
@@ -272,6 +274,10 @@ export default function Kpi({ ctx }) {
   // Igual que armarTop: la posicion se calcula sobre el ranking completo (no
   // solo los 12 que se grafican), asi la variacion de puesto es correcta aunque
   // un area salga del top al caer de puesto.
+  // Las tablas de variacion copian el alto del grafico que tienen al lado,
+  // para que las dos columnas de cada fila terminen a la misma altura.
+  const altoFilaGerencias = altoGerencias(rankingGerencias)
+
   const topAreasChart = useMemo(() => {
     const conValor = rankingAreas.filter((a) => a.volumetria > 0)
     const posActual = new Map([...conValor].sort((a, b) => b.volumetria - a.volumetria).map((a, i) => [a.clave, i + 1]))
@@ -291,6 +297,8 @@ export default function Kpi({ ctx }) {
         posPrev: posPrevia.get(a.clave) ?? null
       }))
   }, [rankingAreas])
+
+  const altoFilaAreas = Math.max(220, topAreasChart.length * 30 + 30)
 
 
   // Tabla de usuarios: general, o solo los del area elegida.
@@ -414,13 +422,17 @@ export default function Kpi({ ctx }) {
           icon={<Icono d={IC.bn} />}
           label="Costo B/N"
           value={fMoney(m.clicBN)}
-          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.clicVariable ? m.clicBN / m.clicVariable : 0)} de la impresión</span>}
+          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.facturacion ? m.clicBN / m.facturacion : 0)} de la facturación</span>}
+          onClick={() => alternarDetalle('bn')}
+          activo={detalleClic === 'bn'}
         />
         <Tile
           icon={<Icono d={IC.color} />}
           label="Costo color"
           value={fMoney(m.clicColor)}
-          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)} de la impresión</span>}
+          foot={<span className="text-[10px] text-slate-400 font-medium">{fPct(m.facturacion ? m.clicColor / m.facturacion : 0)} de la facturación</span>}
+          onClick={() => alternarDetalle('color')}
+          activo={detalleClic === 'color'}
         />
         {esGerencia ? (
           <Tile
@@ -451,9 +463,10 @@ export default function Kpi({ ctx }) {
         />
       </section>
 
-      {/* 3 · Composición de la impresión variable: B/N, color estándar y color A3. */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {desglose.map((d) => (
+      {/* 3 · Detalle del clic, desplegado desde el KPI de B/N o de color. */}
+      {detalleClic && (
+      <section className={`grid grid-cols-1 gap-3 ${detalleClic === 'color' ? 'md:grid-cols-2' : ''}`}>
+        {desglose.filter((d) => d.grupo === detalleClic).map((d) => (
           <div key={d.tipo} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
             <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: d.color }} />
             <div className="flex items-start justify-between gap-2 mb-3">
@@ -468,12 +481,12 @@ export default function Kpi({ ctx }) {
 
             <p className="text-2xl font-bold text-slate-900 num leading-none">{fMoney(d.costo)}</p>
             <p className="text-[10px] text-slate-500 num mt-1">
-              {fPct(d.pctCosto)} de la impresión variable
+              {fPct(d.pctCosto)} de la facturación
               {!sinBase && (
                 <>
                   {' · '}
                   <span className={d.varCosto > 0.0005 ? 'text-rose-600 font-semibold' : d.varCosto < -0.0005 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}>
-                    {fDelta(d.varCosto, 1)}
+                    {fDelta(d.varCosto)}
                   </span>{' '}
                   vs {etiquetaPrev}
                 </>
@@ -491,34 +504,75 @@ export default function Kpi({ ctx }) {
               </span>
             </div>
 
-            {/* Proporción del costo dentro de la impresión variable. */}
+            {/* Proporción del costo dentro de la facturación del periodo. */}
             <div className="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${Math.max(1, d.pctCosto * 100)}%`, background: d.color }} />
             </div>
           </div>
         ))}
       </section>
+      )}
 
-      <Nota tono="aviso" titulo="Peso real del color" icono="▸">
-        El color es el <strong className="num">{fPct(m.pctVolColor)}</strong> del volumen pero el{' '}
-        <strong className="num">{fPct(m.clicVariable ? m.clicColor / m.clicVariable : 0)}</strong> de la impresión. La serie{' '}
-        <strong>{tarifas.nombreA3}</strong> concentra <strong className="num">{fMoney(m.clicColorA3)}</strong> con solo{' '}
-        {fInt(m.volColorA3)} páginas por la tarifa A3 de {fTarifa(tarifas.colorA3)}.
-      </Nota>
 
-      {/* 4 · Comparativa de gerencias. Gobierna áreas, ubicaciones y usuarios. */}
-      <GerenciasBarra
-        filas={rankingGerencias}
-        activo={gerenciaActiva}
-        onClic={esGerencia ? null : alternarGerencia}
-        propia={esGerencia ? gerenciaPropia : null}
-        soloPropia={esGerencia}
-        sinBase={sinBase}
-        etiquetaPrev={etiquetaPrev}
-        etiqueta={etiqueta}
-      />
+      {/* 5 · Gerencias y variación por dimensión, lado a lado. */}
+      <section className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+        <GerenciasBarra
+          className="xl:col-span-6"
+          filas={rankingGerencias}
+          activo={gerenciaActiva}
+          onClic={esGerencia ? null : alternarGerencia}
+          propia={esGerencia ? gerenciaPropia : null}
+          soloPropia={esGerencia}
+          sinBase={sinBase}
+          etiquetaPrev={etiquetaPrev}
+          etiqueta={etiqueta}
+        />
 
-      {/* 5 · Ranking de áreas (clickeable) y variación contra el periodo previo. */}
+        <TablaVariacion
+          className="xl:col-span-6"
+          title="Mes actual vs periodo anterior"
+          subtitle={
+            sinBase
+              ? `Variación por ${dimActiva.l.toLowerCase()}. El periodo seleccionado no tiene un mes previo con el cual comparar.`
+              : `Variación por ${dimActiva.l.toLowerCase()}: ${etiqueta} contra ${etiquetaPrev}.`
+          }
+          right={
+            <div className="flex items-center bg-slate-100/90 rounded-full p-1 border border-slate-200 text-[11px]">
+              {DIMENSIONES.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => setDimension(o.id)}
+                  className={`px-3 py-1 rounded-full transition-colors ${
+                    dimension === o.id
+                      ? 'bg-white text-mt-blue font-bold border border-slate-200/60 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {o.l}
+                </button>
+              ))}
+            </div>
+          }
+          filas={rankingDim}
+          col={dimActiva.col}
+          catSerie={catSerie}
+          nombreClave={dimension === 'gerencia' ? nombreGerencia : titulo}
+          sinBase={sinBase}
+          onFila={
+            dimension === 'gerencia'
+              ? (r) => (esGerencia || r.residual ? null : alternarGerencia(r.clave))
+              : dimension === 'area'
+                ? (r) => alternarArea(r.clave)
+                : undefined
+          }
+          filaActiva={dimension === 'gerencia' ? gerenciaActiva : dimension === 'area' ? areaSel : undefined}
+          maxAltura={`${altoFilaGerencias}px`}
+          totalPie={{ pctVol: pct(m.volumetria, mPrev.volumetria), pctFact: pct(m.facturacion, mPrev.facturacion) }}
+        />
+      </section>
+
+      {/* 6 · Ranking de áreas y variación por impresora. */}
       <section className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         <Card
           className="xl:col-span-6"
@@ -542,7 +596,7 @@ export default function Kpi({ ctx }) {
             )
           }
         >
-          <div style={{ height: Math.max(220, topAreasChart.length * 30 + 30) }}>
+          <div style={{ height: altoFilaAreas }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={topAreasChart}
@@ -579,80 +633,51 @@ export default function Kpi({ ctx }) {
           </div>
         </Card>
 
-        <Card
+        <TablaVariacion
           className="xl:col-span-6"
-          title={`Variación por ${dimActiva.l.toLowerCase()} vs periodo anterior`}
-          subtitle={sinBase ? 'El periodo seleccionado no tiene un mes previo con el cual comparar' : `${etiqueta} contra ${etiquetaPrev}`}
-          right={
-            <div className="flex items-center bg-slate-100/90 rounded-full p-1 border border-slate-200 text-[11px]">
-              {DIMENSIONES.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => setDimension(o.id)}
-                  className={`px-3 py-1 rounded-full transition-colors ${
-                    dimension === o.id
-                      ? 'bg-white text-mt-blue font-bold border border-slate-200/60 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {o.l}
-                </button>
-              ))}
-            </div>
+          title="Variación por impresora vs periodo anterior"
+          subtitle={
+            sinBase
+              ? 'Clic en una impresora para ver qué gerencias y usuarios imprimen en ella'
+              : `${etiqueta} contra ${etiquetaPrev}. Clic en una impresora para ver qué gerencias y usuarios imprimen en ella.`
           }
-        >
-          <Tabla
-            maxAltura="392px"
-            initialSort={{ key: 'volumetria', dir: 'desc' }}
-            onFila={dimension === 'area' ? (r) => alternarArea(r.clave) : undefined}
-            filaActiva={dimension === 'area' ? areaSel : undefined}
-            columnas={[
-              {
-                key: 'clave',
-                label: dimActiva.col,
-                render: (r) =>
-                  dimension === 'serie' ? (
-                    <span className="block min-w-0">
-                      <span className="font-mono text-[11px] font-semibold text-slate-800">{r.clave}</span>
-                      <span className="block text-[10px] text-slate-400 truncate max-w-[170px]">
-                        {titulo(catSerie.get(r.clave)?.area ?? '—')}
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="font-semibold text-slate-800 truncate max-w-[170px] inline-block align-bottom">{titulo(r.clave)}</span>
-                  )
-              },
-              { key: 'volumetria', label: 'Páginas', align: 'right', render: (r) => fInt(r.volumetria) },
-              { key: 'volPrev', label: 'Periodo prev.', align: 'right', render: (r) => (sinBase ? '—' : fInt(r.volPrev)) },
-              {
-                key: 'pctVol',
-                label: 'Var. vol.',
-                align: 'right',
-                sortValue: (r) => (Number.isFinite(r.pctVol) ? r.pctVol : -Infinity),
-                render: (r) => <Var pct={r.pctVol} alta={r.alta} sinBase={sinBase} />
-              },
-              { key: 'facturacion', label: 'Costo', align: 'right', render: (r) => <strong className="text-slate-900">{fMoney(r.facturacion)}</strong> },
-              {
-                key: 'pctFact',
-                label: 'Var. costo',
-                align: 'right',
-                sortValue: (r) => (Number.isFinite(r.pctFact) ? r.pctFact : -Infinity),
-                render: (r) => <Var pct={r.pctFact} alta={r.alta} sinBase={sinBase} />
-              }
-            ]}
-            filas={rankingDim.map((r) => ({ ...r, __key: r.clave }))}
-            pie={{
-              clave: `TOTAL · ${rankingDim.length}`,
-              volumetria: fInt(rankingDim.reduce((a, b) => a + b.volumetria, 0)),
-              volPrev: sinBase ? '—' : fInt(rankingDim.reduce((a, b) => a + b.volPrev, 0)),
-              pctVol: sinBase ? '—' : fDelta(pct(m.volumetria, mPrev.volumetria), 1),
-              facturacion: fMoney(rankingDim.reduce((a, b) => a + b.facturacion, 0)),
-              pctFact: sinBase ? '—' : fDelta(pct(m.facturacion, mPrev.facturacion), 1)
-            }}
-          />
-        </Card>
+          right={
+            serieSel ? (
+              <button
+                type="button"
+                onClick={() => setSerieSel(null)}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-mt-blue/30 bg-mt-blueTint text-mt-blue hover:bg-mt-blue hover:text-white transition-colors"
+              >
+                {serieSel} · quitar ✕
+              </button>
+            ) : (
+              <Badge tone="azul">{rankingSeries.length} impresoras</Badge>
+            )
+          }
+          filas={rankingSeries}
+          col="Serie / ubicación"
+          esSerie
+          catSerie={catSerie}
+          sinBase={sinBase}
+          onFila={(r) => setSerieSel((p) => (p === r.clave ? null : r.clave))}
+          filaActiva={serieSel}
+          maxAltura={`${altoFilaAreas}px`}
+          totalPie={{ pctVol: pct(m.volumetria, mPrev.volumetria), pctFact: pct(m.facturacion, mPrev.facturacion) }}
+        />
       </section>
+
+      {/* 7 · Quién imprime en la impresora elegida. */}
+      {serieSel && (
+        <DetalleImpresora
+          serie={serieSel}
+          info={catSerie.get(serieSel)}
+          asignado={asignadoVista}
+          padron={padron}
+          tarifas={tarifas}
+          onUsuario={abrirUsuario}
+          onCerrar={() => setSerieSel(null)}
+        />
+      )}
 
 
       {/* Evolución de lo que este seleccionado en el ranking de arriba. */}
@@ -672,7 +697,7 @@ export default function Kpi({ ctx }) {
         vacio="No hay consumo registrado en ningún periodo para esta selección."
       />
 
-      {/* 6 · Usuarios: top general, o solo los del área elegida arriba. */}
+      {/* 8 · Usuarios: top general, o solo los del área elegida arriba. */}
       <Card
         title={areaElegida ? `Usuarios de ${titulo(areaElegida.area)}` : 'Consumo por usuario · ranking general'}
         subtitle={

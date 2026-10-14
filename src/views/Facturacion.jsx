@@ -126,7 +126,7 @@ export default function Facturacion({ ctx }) {
               { key: 'clicVariable', label: 'Impresión', align: 'right', render: (r) => fMoney(r.clicVariable) },
               { key: 'cargoFijo', label: 'Cargo fijo', align: 'right', render: (r) => fMoney(r.cargoFijo) },
               { key: 'facturacion', label: 'Total', align: 'right', render: (r) => <strong>{fMoney(r.facturacion)}</strong> },
-              { key: 'pctParticipacionFact', label: '% fact.', align: 'right', render: (r) => fPct(r.pctParticipacionFact, 0) },
+              { key: 'pctParticipacionFact', label: '% fact.', align: 'right', render: (r) => fPct(r.pctParticipacionFact) },
               { key: 'costoPagina', label: '$/pág', align: 'right', render: (r) => (r.volumetria ? fMoney3(r.costoPagina) : '—') }
             ]}
             filas={porSede.map((r) => ({ ...r, __key: r.clave }))}
@@ -159,7 +159,7 @@ export default function Facturacion({ ctx }) {
               },
               { key: 'cargoFijo', label: 'Cargo fijo', align: 'right', render: (r) => fMoney(r.cargoFijo) },
               { key: 'facturacion', label: 'Total', align: 'right', render: (r) => <strong>{fMoney(r.facturacion)}</strong> },
-              { key: 'pctCargoFijo', label: '% fijo', align: 'right', render: (r) => fPct(r.pctCargoFijo, 0) },
+              { key: 'pctCargoFijo', label: '% fijo', align: 'right', render: (r) => fPct(r.pctCargoFijo) },
               { key: 'costoPagina', label: '$/pág', align: 'right', render: (r) => (r.volumetria ? fMoney3(r.costoPagina) : '—') }
             ]}
             filas={porModelo.map((r) => ({ ...r, __key: r.clave }))}

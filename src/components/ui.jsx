@@ -52,15 +52,37 @@ export function Delta({ value, suffix = 'MoM', invertir = false, decimales = 1 }
   )
 }
 
-export function Kpi({ icon, label, value, foot, destacado = false }) {
+// `onClick` convierte la tarjeta en un boton que despliega su propio detalle;
+// `activo` marca que ese detalle esta abierto.
+export function Kpi({ icon, label, value, foot, destacado = false, onClick, activo = false }) {
+  const clicable = typeof onClick === 'function'
+  const Caja = clicable ? 'button' : 'div'
   return (
-    <div
-      className={`rounded-2xl p-3.5 flex flex-col items-center justify-center text-center transition-shadow ${
+    <Caja
+      type={clicable ? 'button' : undefined}
+      onClick={onClick}
+      aria-expanded={clicable ? activo : undefined}
+      className={`relative rounded-2xl p-3.5 flex flex-col items-center justify-center text-center transition-shadow w-full ${
         destacado
           ? 'bg-gradient-to-tr from-mt-ink to-mt-graphite text-white shadow-lg shadow-slate-900/25'
-          : 'bg-white border border-slate-200/80 shadow-card hover:shadow-md'
-      }`}
+          : activo
+            ? 'bg-white border-2 border-mt-blue shadow-md'
+            : 'bg-white border border-slate-200/80 shadow-card hover:shadow-md'
+      } ${clicable ? 'cursor-pointer hover:border-mt-blue/50' : ''}`}
     >
+      {clicable && (
+        <span className={`absolute top-2.5 right-2.5 ${activo ? 'text-mt-blue' : 'text-slate-300'}`} aria-hidden>
+          <svg
+            className={`w-3.5 h-3.5 transition-transform ${activo ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.6"
+            viewBox="0 0 24 24"
+          >
+            <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      )}
       <div
         className={`w-11 h-11 rounded-full flex items-center justify-center mb-2 ${
           destacado ? 'bg-white/15 text-white' : 'bg-mt-blueSoft text-mt-blue border border-blue-100'
@@ -71,7 +93,7 @@ export function Kpi({ icon, label, value, foot, destacado = false }) {
       <span className={`text-[9px] font-bold tracking-wider uppercase ${destacado ? 'text-white/80' : 'text-slate-400'}`}>{label}</span>
       <p className={`text-base font-bold mt-0.5 num ${destacado ? 'text-white' : 'text-slate-900'}`}>{value}</p>
       <span className={`mt-0.5 ${destacado ? 'text-[10px] text-white/80 font-medium' : ''}`}>{foot}</span>
-    </div>
+    </Caja>
   )
 }
 

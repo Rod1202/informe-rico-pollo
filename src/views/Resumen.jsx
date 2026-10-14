@@ -27,7 +27,7 @@ const EtiquetaDesv = ({ x, y, width, height, value }) => {
   const borde = arriba ? Math.min(y, y + height) - 5 : Math.max(y, y + height) + 13
   return (
     <text x={x + width / 2} y={borde} textAnchor="middle" style={{ fontSize: 10, fontWeight: 700, fill: C.text }}>
-      {fDelta(value, 1)}
+      {fDelta(value)}
     </text>
   )
 }
@@ -54,7 +54,7 @@ function Desviacion({ titulo, referencia, datos, clave }) {
           <BarChart data={datos} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
             <YAxis hide domain={[-tope, tope]} />
             <XAxis dataKey="label" tick={{ fontSize: 9, fill: C.text, fontWeight: 600 }} axisLine={false} tickLine={false} />
-            <Tooltip content={<TooltipBox formato={(v) => fDelta(v, 1)} />} cursor={{ fill: 'rgba(0,102,255,0.05)' }} />
+            <Tooltip content={<TooltipBox formato={(v) => fDelta(v)} />} cursor={{ fill: 'rgba(0,102,255,0.05)' }} />
             <ReferenceLine y={0} stroke={C.ink} strokeWidth={1.5} />
             <Bar dataKey={clave} name={`${titulo} vs promedio`} maxBarSize={34}>
               {datos.map((d) => (
